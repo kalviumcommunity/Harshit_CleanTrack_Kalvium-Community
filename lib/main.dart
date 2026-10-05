@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cleantrack/screens/splash_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/login_screen.dart';
 
@@ -22,7 +23,7 @@ class CleanTrackApp extends StatelessWidget {
         useMaterial3: true,
         scaffoldBackgroundColor: const Color(0xFFF8FAFC),
       ),
-      initialRoute: '/register',
+      home: const SplashScreen(),
       routes: {
         '/register': (context) => const RegisterScreen(),
         '/login': (context) => const LoginScreen(),
