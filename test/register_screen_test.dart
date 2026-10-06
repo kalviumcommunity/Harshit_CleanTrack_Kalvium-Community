@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cleantrack/screens/register_screen.dart';
 import 'package:cleantrack/screens/login_screen.dart';
+import 'package:cleantrack/screens/pending_verification_screen.dart';
 import 'package:cleantrack/services/auth_service.dart';
 import 'package:cleantrack/models/user_model.dart';
 
@@ -236,15 +237,12 @@ void main() {
     await tester.tap(find.byKey(const Key('loginLink')));
     await tester.pumpAndSettle();
 
-    // Login screen displays the Registration successful screen
-    expect(find.text('Registration successful'), findsOneWidget);
-    expect(
-      find.text('Dashboard access will become available after an administrator verifies your identity.'),
-      findsOneWidget,
-    );
+    // Login screen displays the Login page heading and register action
+    expect(find.text('Login page'), findsOneWidget);
+    expect(find.byKey(const Key('goToRegisterButton')), findsOneWidget);
   });
 
-  testWidgets('LoginScreen displays verification message correctly', (WidgetTester tester) async {
+  testWidgets('LoginScreen displays correctly and navigates to RegisterScreen', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(800, 1400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -253,6 +251,28 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(
         home: LoginScreen(),
+      ),
+    );
+
+    expect(find.text('Login page'), findsOneWidget);
+    expect(find.byKey(const Key('goToRegisterButton')), findsOneWidget);
+
+    // Tap to go to register
+    await tester.tap(find.byKey(const Key('goToRegisterButton')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Create Account'), findsOneWidget);
+  });
+
+  testWidgets('PendingVerificationScreen displays verification message correctly', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: PendingVerificationScreen(),
       ),
     );
 

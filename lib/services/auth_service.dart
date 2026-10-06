@@ -1,4 +1,7 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_model.dart';
+import 'firestore_service.dart';
 
 class RegisterResult {
   final bool isSuccess;
@@ -14,10 +17,34 @@ class RegisterResult {
         user = null;
 }
 
+class LoginResult {
+  final bool isSuccess;
+  final String? errorMessage;
+  final UserModel? user;
+
+  const LoginResult.success(this.user)
+      : isSuccess = true,
+        errorMessage = null;
+
+  const LoginResult.failure(this.errorMessage)
+      : isSuccess = false,
+        user = null;
+}
+
 class AuthService {
   static final AuthService _instance = AuthService._internal();
   factory AuthService() => _instance;
   AuthService._internal();
+
+  FirebaseAuth? _firebaseAuth;
+  final FirestoreService _firestoreService = FirestoreService();
+
+  FirebaseAuth get auth => _firebaseAuth ?? FirebaseAuth.instance;
+
+  // Visible for testing / dependency injection
+  void setDependencies({FirebaseAuth? auth}) {
+    _firebaseAuth = auth;
+  }
 
   final List<UserModel> _registeredUsers = [];
 
@@ -25,6 +52,14 @@ class AuthService {
 
   void clearUsers() {
     _registeredUsers.clear();
+  }
+
+  bool get isFirebaseAvailable {
+    try {
+      return Firebase.apps.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Validates an employee ID against the selected role.
@@ -97,7 +132,7 @@ class AuthService {
     return null;
   }
 
-  /// Registers a new user
+  /// Registers a new user with Firebase Authentication and stores metadata in Firestore
   Future<RegisterResult> registerUser({
     required String fullName,
     required String employeeId,
@@ -109,7 +144,7 @@ class AuthService {
     final cleanEmployeeId = employeeId.trim().toUpperCase();
     final cleanEmail = email.trim().toLowerCase();
 
-    // Check duplicate email
+    // Local pre-checks for fast client validation & test environments
     final isEmailDuplicate = _registeredUsers.any(
       (user) => user.email.toLowerCase() == cleanEmail,
     );
@@ -119,7 +154,6 @@ class AuthService {
       );
     }
 
-    // Check duplicate employee ID
     final isIdDuplicate = _registeredUsers.any(
       (user) => user.employeeId.toUpperCase() == cleanEmployeeId,
     );
@@ -129,19 +163,145 @@ class AuthService {
       );
     }
 
-    // Create new user with Pending status and no ward
-    final newUser = UserModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      fullName: cleanFullName,
-      employeeId: cleanEmployeeId,
-      email: cleanEmail,
-      password: password,
-      role: role,
-      status: UserStatus.pending,
-      ward: null, // Ward is not assigned during registration
-    );
+    if (isFirebaseAvailable) {
+      try {
+        // 1. Create User in Firebase Auth
+        final userCredential = await auth.createUserWithEmailAndPassword(
+          email: cleanEmail,
+          password: password,
+        );
 
-    _registeredUsers.add(newUser);
-    return RegisterResult.success(newUser);
+        final firebaseUser = userCredential.user;
+        if (firebaseUser == null) {
+          return const RegisterResult.failure('Failed to create account.');
+        }
+
+        // 2. Update display name in Firebase Auth
+        await firebaseUser.updateDisplayName(cleanFullName);
+
+        // 3. Create UserModel
+        final newUser = UserModel(
+          id: firebaseUser.uid,
+          fullName: cleanFullName,
+          employeeId: cleanEmployeeId,
+          email: cleanEmail,
+          password: password,
+          role: role,
+          status: UserStatus.pending,
+          ward: null,
+        );
+
+        // 4. Store user profile and status in Firestore via FirestoreService
+        await _firestoreService.saveUserProfile(newUser);
+
+        _registeredUsers.add(newUser);
+        return RegisterResult.success(newUser);
+      } on FirebaseAuthException catch (e) {
+        return RegisterResult.failure(_handleFirebaseAuthError(e));
+      } catch (e) {
+        return RegisterResult.failure('An unexpected error occurred: ${e.toString()}');
+      }
+    } else {
+      // In-memory fallback (used in unit/widget tests or offline development)
+      final newUser = UserModel(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        fullName: cleanFullName,
+        employeeId: cleanEmployeeId,
+        email: cleanEmail,
+        password: password,
+        role: role,
+        status: UserStatus.pending,
+        ward: null,
+      );
+
+      _registeredUsers.add(newUser);
+      return RegisterResult.success(newUser);
+    }
+  }
+
+  /// Logs in a user with Firebase Authentication
+  Future<LoginResult> loginUser({
+    required String email,
+    required String password,
+  }) async {
+    final cleanEmail = email.trim().toLowerCase();
+
+    if (isFirebaseAvailable) {
+      try {
+        final userCredential = await auth.signInWithEmailAndPassword(
+          email: cleanEmail,
+          password: password,
+        );
+
+        final firebaseUser = userCredential.user;
+        if (firebaseUser == null) {
+          return const LoginResult.failure('Failed to authenticate.');
+        }
+
+        // Fetch user data from Firestore
+        final userProfile = await _firestoreService.getUserProfile(firebaseUser.uid);
+        if (userProfile != null) {
+          return LoginResult.success(userProfile);
+        }
+
+        // Fallback user if Firestore document is not yet configured
+        final user = UserModel(
+          id: firebaseUser.uid,
+          fullName: firebaseUser.displayName ?? '',
+          employeeId: '',
+          email: cleanEmail,
+          password: '',
+          role: UserRole.supervisor,
+          status: UserStatus.pending,
+        );
+        return LoginResult.success(user);
+      } on FirebaseAuthException catch (e) {
+        return LoginResult.failure(_handleFirebaseAuthError(e));
+      } catch (e) {
+        return LoginResult.failure('Login failed: ${e.toString()}');
+      }
+    } else {
+      // In-memory fallback
+      final match = _registeredUsers.where(
+        (u) => u.email.toLowerCase() == cleanEmail && u.password == password,
+      );
+      if (match.isNotEmpty) {
+        return LoginResult.success(match.first);
+      }
+      return const LoginResult.failure('Invalid email or password.');
+    }
+  }
+
+  /// Signs out the currently authenticated user
+  Future<void> signOut() async {
+    if (isFirebaseAvailable) {
+      await auth.signOut();
+    }
+  }
+
+  /// User friendly error messages from Firebase auth codes
+  String _handleFirebaseAuthError(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'email-already-in-use':
+        return 'An account with this email already exists.';
+      case 'invalid-email':
+        return 'Please enter a valid email address.';
+      case 'operation-not-allowed':
+        return 'Email/password accounts are not enabled in Firebase.';
+      case 'weak-password':
+        return 'The password provided is too weak.';
+      case 'user-disabled':
+        return 'This user account has been disabled.';
+      case 'user-not-found':
+      case 'wrong-password':
+      case 'invalid-credential':
+        return 'Invalid email or password.';
+      case 'network-request-failed':
+        return 'Network connection error. Please try again.';
+      case 'too-many-requests':
+        return 'Too many attempts. Please try again later.';
+      default:
+        return e.message ?? 'Authentication failed. Please try again.';
+    }
   }
 }

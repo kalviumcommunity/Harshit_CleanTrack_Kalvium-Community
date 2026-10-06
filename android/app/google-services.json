@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "184887830049",
+    "project_id": "cleantrack-4c92b",
+    "storage_bucket": "cleantrack-4c92b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:184887830049:android:e9b4e7ea27b3d7c0cda560",
+        "android_client_info": {
+          "package_name": "com.example.cleantrack"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDDBuphtZcdXPJlRy-_QaLWWR3NxuL3W6E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

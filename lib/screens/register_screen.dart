@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../widgets/app_logo.dart';
 import 'login_screen.dart';
+import 'pending_verification_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -66,7 +68,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (result.isSuccess && result.user != null) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        MaterialPageRoute(builder: (_) => const PendingVerificationScreen()),
       );
     } else {
       setState(() {
@@ -116,24 +118,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Widget _buildHeader() {
     return Column(
-      children: [
-        Container(
-          width: 56,
-          height: 56,
-          decoration: const BoxDecoration(
-            color: Color(0xFF0F172A),
-            shape: BoxShape.circle,
-          ),
-          child: const Center(
-            child: Icon(
-              Icons.check_circle_outline,
-              color: Colors.white,
-              size: 32,
-            ),
-          ),
+      children: const [
+        AppLogo(
+          size: 56,
+          iconSize: 32,
         ),
-        const SizedBox(height: 12),
-        const Text(
+        SizedBox(height: 12),
+        Text(
           'CleanTrack',
           style: TextStyle(
             fontSize: 26,
@@ -142,8 +133,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
             letterSpacing: -0.5,
           ),
         ),
-        const SizedBox(height: 4),
-        const Text(
+        SizedBox(height: 4),
+        Text(
           'Hospital Housekeeping Management',
           style: TextStyle(
             fontSize: 14,

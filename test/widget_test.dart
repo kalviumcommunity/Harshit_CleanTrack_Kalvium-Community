@@ -4,7 +4,7 @@ import 'package:cleantrack/main.dart';
 
 void main() {
   testWidgets(
-    'CleanTrack app launches and renders registration screen',
+    'CleanTrack app launches and renders splash screen',
     (WidgetTester tester) async {
       tester.view.physicalSize = const Size(800, 1400);
       tester.view.devicePixelRatio = 1.0;
@@ -12,10 +12,13 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
 
       await tester.pumpWidget(const CleanTrackApp());
-      await tester.pumpAndSettle();
 
       expect(find.text('CleanTrack'), findsOneWidget);
-      expect(find.text('Create Account'), findsOneWidget);
+      expect(find.text('Hospital Housekeeping Management'), findsOneWidget);
+
+      // Advance clock past the splash screen delay to resolve pending timers
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
     },
   );
 }

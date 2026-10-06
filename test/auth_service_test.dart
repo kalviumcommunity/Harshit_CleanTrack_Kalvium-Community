@@ -167,4 +167,66 @@ void main() {
       expect(duplicateResult.errorMessage, 'This Employee ID is already registered.');
     });
   });
+
+  group('UserModel & Firestore Mapping Tests', () {
+    test('UserModel toJson and fromMap serialize properly', () {
+      final user = UserModel(
+        id: 'user-123',
+        fullName: 'Dr. Ramesh',
+        employeeId: 'SUP-005',
+        email: 'ramesh@hospital.org',
+        password: '',
+        role: UserRole.supervisor,
+        status: UserStatus.pending,
+        ward: 'Ward A',
+      );
+
+      final json = user.toJson();
+      expect(json['id'], 'user-123');
+      expect(json['fullName'], 'Dr. Ramesh');
+      expect(json['role'], 'Supervisor');
+      expect(json['status'], 'Pending');
+      expect(json['ward'], 'Ward A');
+
+      final fromMapUser = UserModel.fromMap(json, 'user-123');
+      expect(fromMapUser.id, 'user-123');
+      expect(fromMapUser.fullName, 'Dr. Ramesh');
+      expect(fromMapUser.role, UserRole.supervisor);
+      expect(fromMapUser.status, UserStatus.pending);
+      expect(fromMapUser.ward, 'Ward A');
+    });
+
+    test('UserModel copyWith works accurately', () {
+      final user = UserModel(
+        id: 'user-1',
+        fullName: 'Asha Singh',
+        employeeId: 'WRK-101',
+        email: 'asha@hospital.org',
+        password: 'pass',
+        role: UserRole.worker,
+        status: UserStatus.pending,
+      );
+
+      final approvedUser = user.copyWith(
+        status: UserStatus.approved,
+        ward: 'Emergency Ward',
+      );
+
+      expect(approvedUser.id, 'user-1');
+      expect(approvedUser.status, UserStatus.approved);
+      expect(approvedUser.ward, 'Emergency Ward');
+      expect(approvedUser.role, UserRole.worker);
+    });
+
+    test('UserRole and UserStatus fromString parsing', () {
+      expect(UserRole.fromString('supervisor'), UserRole.supervisor);
+      expect(UserRole.fromString('Worker'), UserRole.worker);
+      expect(UserRole.fromString('unknown'), UserRole.worker);
+
+      expect(UserStatus.fromString('approved'), UserStatus.approved);
+      expect(UserStatus.fromString('Rejected'), UserStatus.rejected);
+      expect(UserStatus.fromString('pending'), UserStatus.pending);
+      expect(UserStatus.fromString(null), UserStatus.pending);
+    });
+  });
 }
