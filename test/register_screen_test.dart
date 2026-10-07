@@ -222,6 +222,50 @@ void main() {
     expect(users.first.status, UserStatus.pending);
   });
 
+  testWidgets('Registering again with the same account shows top error banner on Register page without snackbar', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // Pre-register user
+    await AuthService().registerUser(
+      fullName: 'Neha Sharma',
+      employeeId: 'WRK-001',
+      email: 'neha@gmail.com',
+      password: 'password123',
+      role: UserRole.worker,
+    );
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: RegisterScreen(),
+      ),
+    );
+
+    // Switch to Worker
+    await tester.tap(find.text('Worker'));
+    await tester.pumpAndSettle();
+
+    // Fill in same account details
+    await tester.enterText(find.byKey(const Key('fullNameField')), 'Neha');
+    await tester.enterText(find.byKey(const Key('employeeIdField')), 'WRK-001');
+    await tester.enterText(find.byKey(const Key('emailField')), 'neha@gmail.com');
+    await tester.enterText(find.byKey(const Key('passwordField')), 'password123');
+    await tester.enterText(find.byKey(const Key('confirmPasswordField')), 'password123');
+
+    await tester.tap(find.byKey(const Key('registerButton')));
+    await tester.pumpAndSettle();
+
+    // Verify stays on Register page and displays the top error banner
+    expect(find.text('Create Account'), findsOneWidget);
+    expect(find.text('An account with this email already exists.'), findsOneWidget);
+    expect(find.byIcon(Icons.error_outline), findsOneWidget);
+
+    // Verify snackbar is NOT shown
+    expect(find.byType(SnackBar), findsNothing);
+  });
+
   testWidgets('Navigation from RegisterScreen to LoginScreen via LOGIN link', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(800, 1400);
     tester.view.devicePixelRatio = 1.0;

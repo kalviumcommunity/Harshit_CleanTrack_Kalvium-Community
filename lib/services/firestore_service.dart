@@ -57,6 +57,24 @@ class FirestoreService {
     }
   }
 
+  /// Fetches a user profile document from Firestore by user email
+  Future<UserModel?> getUserByEmail(String email) async {
+    if (!isFirebaseAvailable) return null;
+    try {
+      final query = await _usersCollection
+          .where('email', isEqualTo: email.trim().toLowerCase())
+          .limit(1)
+          .get();
+      if (query.docs.isNotEmpty) {
+        return UserModel.fromMap(query.docs.first.data(), query.docs.first.id);
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error fetching user profile by email from Firestore: $e');
+      return null;
+    }
+  }
+
   /// Real-time stream of a user's profile (useful for watching status changes from Pending -> Approved)
   Stream<UserModel?> streamUserProfile(String uid) {
     if (!isFirebaseAvailable) {
@@ -84,13 +102,18 @@ class FirestoreService {
     }
   }
 
-  /// Assigns a hospital ward to a verified worker or supervisor
-  Future<bool> assignWard(String uid, String ward) async {
+  /// Assigns a hospital ward to a worker or supervisor (and optionally updates their status)
+  Future<bool> assignWard(String uid, String wardId, {UserStatus? newStatus}) async {
     if (!isFirebaseAvailable) return true;
     try {
-      await _usersCollection.doc(uid).update({
-        'ward': ward,
-      });
+      final updateData = <String, dynamic>{
+        'wardId': wardId,
+        'ward': wardId,
+      };
+      if (newStatus != null) {
+        updateData['status'] = newStatus.displayName;
+      }
+      await _usersCollection.doc(uid).update(updateData);
       return true;
     } catch (e) {
       debugPrint('Error assigning ward in Firestore: $e');

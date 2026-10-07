@@ -125,8 +125,8 @@ void main() {
       expect(result.user!.ward, isNull);
     });
 
-    test('Rejects duplicate email registration', () async {
-      await authService.registerUser(
+    test('Rejects duplicate email registration with exact error message', () async {
+      final firstResult = await authService.registerUser(
         fullName: 'First User',
         employeeId: 'WRK-101',
         email: 'duplicate@hospital.org',
@@ -134,7 +134,9 @@ void main() {
         role: UserRole.worker,
       );
 
-      final duplicateResult = await authService.registerUser(
+      expect(firstResult.isSuccess, isTrue);
+
+      final secondResult = await authService.registerUser(
         fullName: 'Second User',
         employeeId: 'WRK-102',
         email: 'DUPLICATE@hospital.org',
@@ -142,8 +144,8 @@ void main() {
         role: UserRole.worker,
       );
 
-      expect(duplicateResult.isSuccess, isFalse);
-      expect(duplicateResult.errorMessage, 'An account with this email already exists.');
+      expect(secondResult.isSuccess, isFalse);
+      expect(secondResult.errorMessage, 'An account with this email already exists.');
     });
 
     test('Rejects duplicate employee ID registration', () async {
@@ -207,25 +209,29 @@ void main() {
         status: UserStatus.pending,
       );
 
-      final approvedUser = user.copyWith(
-        status: UserStatus.approved,
-        ward: 'Emergency Ward',
+      final availableUser = user.copyWith(
+        status: UserStatus.available,
+        wardId: 'Emergency Ward',
       );
 
-      expect(approvedUser.id, 'user-1');
-      expect(approvedUser.status, UserStatus.approved);
-      expect(approvedUser.ward, 'Emergency Ward');
-      expect(approvedUser.role, UserRole.worker);
+      expect(availableUser.id, 'user-1');
+      expect(availableUser.status, UserStatus.available);
+      expect(availableUser.wardId, 'Emergency Ward');
+      expect(availableUser.ward, 'Emergency Ward');
+      expect(availableUser.role, UserRole.worker);
     });
 
     test('UserRole and UserStatus fromString parsing', () {
+      expect(UserRole.fromString('admin'), UserRole.admin);
       expect(UserRole.fromString('supervisor'), UserRole.supervisor);
       expect(UserRole.fromString('Worker'), UserRole.worker);
       expect(UserRole.fromString('unknown'), UserRole.worker);
 
-      expect(UserStatus.fromString('approved'), UserStatus.approved);
-      expect(UserStatus.fromString('Rejected'), UserStatus.rejected);
       expect(UserStatus.fromString('pending'), UserStatus.pending);
+      expect(UserStatus.fromString('available'), UserStatus.available);
+      expect(UserStatus.fromString('busy'), UserStatus.busy);
+      expect(UserStatus.fromString('suspended'), UserStatus.suspended);
+      expect(UserStatus.fromString('assigned'), UserStatus.assigned);
       expect(UserStatus.fromString(null), UserStatus.pending);
     });
   });
