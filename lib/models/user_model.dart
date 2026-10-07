@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 enum UserRole {
   admin,
   supervisor,
@@ -90,48 +92,49 @@ enum UserStatus {
   }
 }
 
+DateTime _parseDateTime(dynamic value) {
+  if (value is Timestamp) return value.toDate();
+  if (value is DateTime) return value;
+  if (value is String) return DateTime.tryParse(value) ?? DateTime.now();
+  if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+  return DateTime.now();
+}
+
 class UserModel {
-  final String id;
-  final String fullName;
+  final String userId;
+  final String name;
   final String employeeId;
   final String email;
-  final String password;
   final UserRole role;
-  final UserStatus status;
+  final DocumentReference? wardRef;
   final String? wardId;
+  final UserStatus status;
   final String? activeAssignmentId;
   final DateTime createdAt;
 
   UserModel({
-    required this.id,
-    required this.fullName,
+    required this.userId,
+    required this.name,
     required this.employeeId,
     required this.email,
-    required this.password,
     required this.role,
+    this.wardRef,
+    this.wardId,
     this.status = UserStatus.pending,
-    String? wardId,
-    String? ward,
     this.activeAssignmentId,
     DateTime? createdAt,
-  })  : wardId = wardId ?? ward,
-        createdAt = createdAt ?? DateTime.now();
-
-  String get name => fullName;
-  String? get ward => wardId;
+  }) : createdAt = createdAt ?? DateTime.now();
 
   Map<String, dynamic> toJson() {
     return {
-      'userId': id,
-      'id': id,
-      'name': fullName,
-      'fullName': fullName,
+      'userId': userId,
+      'name': name,
       'employeeId': employeeId,
       'email': email,
       'role': role.displayName,
-      'status': status.displayName,
+      'wardRef': wardRef,
       'wardId': wardId,
-      'ward': wardId,
+      'status': status.displayName,
       'activeAssignmentId': activeAssignmentId,
       'createdAt': createdAt.toIso8601String(),
     };
@@ -139,43 +142,40 @@ class UserModel {
 
   factory UserModel.fromMap(Map<String, dynamic> map, String id) {
     return UserModel(
-      id: id,
-      fullName: map['name'] ?? map['fullName'] ?? '',
+      userId: id,
+      name: map['name'] ?? '',
       employeeId: map['employeeId'] ?? '',
       email: map['email'] ?? '',
-      password: map['password'] ?? '',
       role: UserRole.fromString(map['role']),
+      wardRef: map['wardRef'] is DocumentReference ? map['wardRef'] as DocumentReference : null,
+      wardId: map['wardId'],
       status: UserStatus.fromString(map['status']),
-      wardId: map['wardId'] ?? map['ward'],
       activeAssignmentId: map['activeAssignmentId'],
-      createdAt: map['createdAt'] != null
-          ? DateTime.tryParse(map['createdAt'].toString()) ?? DateTime.now()
-          : DateTime.now(),
+      createdAt: _parseDateTime(map['createdAt']),
     );
   }
 
   UserModel copyWith({
-    String? id,
-    String? fullName,
+    String? userId,
+    String? name,
     String? employeeId,
     String? email,
-    String? password,
     UserRole? role,
-    UserStatus? status,
+    DocumentReference? wardRef,
     String? wardId,
-    String? ward,
+    UserStatus? status,
     String? activeAssignmentId,
     DateTime? createdAt,
   }) {
     return UserModel(
-      id: id ?? this.id,
-      fullName: fullName ?? this.fullName,
+      userId: userId ?? this.userId,
+      name: name ?? this.name,
       employeeId: employeeId ?? this.employeeId,
       email: email ?? this.email,
-      password: password ?? this.password,
       role: role ?? this.role,
+      wardRef: wardRef ?? this.wardRef,
+      wardId: wardId ?? this.wardId,
       status: status ?? this.status,
-      wardId: wardId ?? ward ?? this.wardId,
       activeAssignmentId: activeAssignmentId ?? this.activeAssignmentId,
       createdAt: createdAt ?? this.createdAt,
     );

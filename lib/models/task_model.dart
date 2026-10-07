@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 enum TaskStatus {
   open,
   closed;
@@ -23,77 +25,86 @@ enum TaskStatus {
   }
 }
 
+DateTime _parseDateTime(dynamic value) {
+  if (value is Timestamp) return value.toDate();
+  if (value is DateTime) return value;
+  if (value is String) return DateTime.tryParse(value) ?? DateTime.now();
+  if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+  return DateTime.now();
+}
+
 class TaskModel {
-  final String id;
+  final String taskId;
+  final DocumentReference? wardRef;
   final String wardId;
-  final String createdBy;
+  final DocumentReference? createdByRef;
   final String title;
   final String description;
+  final DateTime createdAt;
   final TaskStatus status;
   final String? currentAssignmentId;
-  final DateTime createdAt;
 
   TaskModel({
-    required this.id,
+    required this.taskId,
+    this.wardRef,
     required this.wardId,
-    required this.createdBy,
+    this.createdByRef,
     required this.title,
     required this.description,
+    DateTime? createdAt,
     this.status = TaskStatus.open,
     this.currentAssignmentId,
-    DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
-
-  String get taskId => id;
 
   Map<String, dynamic> toJson() {
     return {
-      'taskId': id,
-      'id': id,
+      'taskId': taskId,
+      'wardRef': wardRef,
       'wardId': wardId,
-      'createdBy': createdBy,
+      'createdByRef': createdByRef,
       'title': title,
       'description': description,
+      'createdAt': createdAt.toIso8601String(),
       'status': status.displayName,
       'currentAssignmentId': currentAssignmentId,
-      'createdAt': createdAt.toIso8601String(),
     };
   }
 
   factory TaskModel.fromMap(Map<String, dynamic> map, String id) {
     return TaskModel(
-      id: id,
+      taskId: id,
+      wardRef: map['wardRef'] is DocumentReference ? map['wardRef'] as DocumentReference : null,
       wardId: map['wardId'] ?? '',
-      createdBy: map['createdBy'] ?? map['supervisorId'] ?? '',
+      createdByRef: map['createdByRef'] is DocumentReference ? map['createdByRef'] as DocumentReference : null,
       title: map['title'] ?? '',
       description: map['description'] ?? '',
+      createdAt: _parseDateTime(map['createdAt']),
       status: TaskStatus.fromString(map['status']),
       currentAssignmentId: map['currentAssignmentId'],
-      createdAt: map['createdAt'] != null
-          ? DateTime.tryParse(map['createdAt'].toString()) ?? DateTime.now()
-          : DateTime.now(),
     );
   }
 
   TaskModel copyWith({
-    String? id,
+    String? taskId,
+    DocumentReference? wardRef,
     String? wardId,
-    String? createdBy,
+    DocumentReference? createdByRef,
     String? title,
     String? description,
+    DateTime? createdAt,
     TaskStatus? status,
     String? currentAssignmentId,
-    DateTime? createdAt,
   }) {
     return TaskModel(
-      id: id ?? this.id,
+      taskId: taskId ?? this.taskId,
+      wardRef: wardRef ?? this.wardRef,
       wardId: wardId ?? this.wardId,
-      createdBy: createdBy ?? this.createdBy,
+      createdByRef: createdByRef ?? this.createdByRef,
       title: title ?? this.title,
       description: description ?? this.description,
+      createdAt: createdAt ?? this.createdAt,
       status: status ?? this.status,
       currentAssignmentId: currentAssignmentId ?? this.currentAssignmentId,
-      createdAt: createdAt ?? this.createdAt,
     );
   }
 }
