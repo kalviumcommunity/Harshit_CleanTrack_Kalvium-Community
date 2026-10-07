@@ -1,0 +1,114 @@
+name: Flutter CI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  flutter-ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout the repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Set up Java 21
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      # Set up the exact Flutter version used by CI
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.4'
+          channel: stable
+          cache: true
+
+      # Verify the CI environment
+      - name: Verify Flutter and Java versions
+        run: |
+          flutter --version
+          java -version
+
+      # Install Flutter dependencies
+      - name: Get dependencies
+        run: flutter pub get
+
+      # Static analysis
+      - name: Analyze
+        run: flutter analyze
+
+      # Run existing tests
+      - name: Run tests
+        run: flutter test
+
+      # Build release APK
+      - name: Build release APK
+        run: flutter build apk --release
+
+      # Upload APK as GitHub Actions artifact
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-apk-${{ github.run_number }}-${{ github.run_attempt }}
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+      # Keep only the 5 newest APK artifacts
+      - name: Keep only the 5 newest APK artifacts
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const artifacts = await github.paginate(
+              github.rest.actions.listArtifactsForRepo,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100
+              }
+            );
+
+            const apkArtifacts = artifacts
+              .filter(
+                artifact =>
+                  artifact.name.startsWith('flutter-apk-') &&
+                  !artifact.expired
+              )
+              .sort(
+                (a, b) =>
+                  new Date(b.created_at) - new Date(a.created_at)
+              );
+
+            const artifactsToDelete = apkArtifacts.slice(5);
+
+            for (const artifact of artifactsToDelete) {
+              core.info(
+                `Deleting old artifact: ${artifact.name} (ID: ${artifact.id})`
+              );
+
+              await github.rest.actions.deleteArtifact({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                artifact_id: artifact.id
+              });
+            }
+
+            core.info(
+              `Total APK artifacts found: ${apkArtifacts.length}`
+            );
+
+            core.info(
+              `Deleted artifacts: ${artifactsToDelete.length}`
+            );
+
+            core.info(
+              `Artifacts retained: ${Math.min(apkArtifacts.length, 5)}`
+            );
