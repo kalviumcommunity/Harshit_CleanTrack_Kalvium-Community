@@ -31,7 +31,7 @@ class FirestoreService {
   Future<bool> saveUserProfile(UserModel user) async {
     if (!isFirebaseAvailable) return true;
     try {
-      await _usersCollection.doc(user.id).set(
+      await _usersCollection.doc(user.userId).set(
             user.toJson(),
             SetOptions(merge: true),
           );
@@ -108,7 +108,6 @@ class FirestoreService {
     try {
       final updateData = <String, dynamic>{
         'wardId': wardId,
-        'ward': wardId,
       };
       if (newStatus != null) {
         updateData['status'] = newStatus.displayName;
