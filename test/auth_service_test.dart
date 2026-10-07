@@ -11,11 +11,21 @@ void main() {
   });
 
   group('AuthService Validation Tests', () {
-    test('Full name validation requires at least 2 characters', () {
+    test('Full name validation requires letters and spaces only', () {
       expect(AuthService.validateFullName(''), 'Full Name is required');
       expect(AuthService.validateFullName('   '), 'Full Name is required');
       expect(AuthService.validateFullName('A'), 'Full Name must be at least 2 characters long');
+      // Rejects numbers
+      expect(AuthService.validateFullName('John123'), 'Full Name can only contain letters and spaces');
+      expect(AuthService.validateFullName('12345'), 'Full Name can only contain letters and spaces');
+      // Rejects special characters
+      expect(AuthService.validateFullName('John@Doe'), 'Full Name can only contain letters and spaces');
+      expect(AuthService.validateFullName('Neha#Sharma'), 'Full Name can only contain letters and spaces');
+      expect(AuthService.validateFullName('Alex_Smith'), 'Full Name can only contain letters and spaces');
+      // Accepts valid string names
       expect(AuthService.validateFullName('John Doe'), isNull);
+      expect(AuthService.validateFullName('Neha Sharma'), isNull);
+      expect(AuthService.validateFullName('Alice'), isNull);
     });
 
     test('Worker Employee ID format validation', () {
@@ -98,12 +108,12 @@ void main() {
 
       expect(result.isSuccess, isTrue);
       expect(result.user, isNotNull);
-      expect(result.user!.fullName, 'Ramesh Kumar');
+      expect(result.user!.name, 'Ramesh Kumar');
       expect(result.user!.employeeId, 'WRK-101');
       expect(result.user!.email, 'ramesh@hospital.org');
       expect(result.user!.role, UserRole.worker);
       expect(result.user!.status, UserStatus.pending);
-      expect(result.user!.ward, isNull);
+      expect(result.user!.wardId, isNull);
     });
 
     test('Successfully registers a Supervisor with Pending status and null ward', () async {
@@ -117,12 +127,12 @@ void main() {
 
       expect(result.isSuccess, isTrue);
       expect(result.user, isNotNull);
-      expect(result.user!.fullName, 'Neha Sharma');
+      expect(result.user!.name, 'Neha Sharma');
       expect(result.user!.employeeId, 'SUP-202');
       expect(result.user!.email, 'neha.sharma@hospital.org');
       expect(result.user!.role, UserRole.supervisor);
       expect(result.user!.status, UserStatus.pending);
-      expect(result.user!.ward, isNull);
+      expect(result.user!.wardId, isNull);
     });
 
     test('Rejects duplicate email registration with exact error message', () async {
@@ -168,43 +178,63 @@ void main() {
       expect(duplicateResult.isSuccess, isFalse);
       expect(duplicateResult.errorMessage, 'This Employee ID is already registered.');
     });
+
+    test('Rejects registration when full name contains numbers or special characters', () async {
+      final numberResult = await authService.registerUser(
+        fullName: 'John123',
+        employeeId: 'WRK-101',
+        email: 'john@hospital.org',
+        password: 'password123',
+        role: UserRole.worker,
+      );
+      expect(numberResult.isSuccess, isFalse);
+      expect(numberResult.errorMessage, 'Full Name can only contain letters and spaces');
+
+      final symbolResult = await authService.registerUser(
+        fullName: 'John@Doe',
+        employeeId: 'WRK-101',
+        email: 'john@hospital.org',
+        password: 'password123',
+        role: UserRole.worker,
+      );
+      expect(symbolResult.isSuccess, isFalse);
+      expect(symbolResult.errorMessage, 'Full Name can only contain letters and spaces');
+    });
   });
 
   group('UserModel & Firestore Mapping Tests', () {
     test('UserModel toJson and fromMap serialize properly', () {
       final user = UserModel(
-        id: 'user-123',
-        fullName: 'Dr. Ramesh',
+        userId: 'user-123',
+        name: 'Dr. Ramesh',
         employeeId: 'SUP-005',
         email: 'ramesh@hospital.org',
-        password: '',
         role: UserRole.supervisor,
         status: UserStatus.pending,
-        ward: 'Ward A',
+        wardId: 'ward-01',
       );
 
       final json = user.toJson();
-      expect(json['id'], 'user-123');
-      expect(json['fullName'], 'Dr. Ramesh');
+      expect(json['userId'], 'user-123');
+      expect(json['name'], 'Dr. Ramesh');
       expect(json['role'], 'Supervisor');
       expect(json['status'], 'Pending');
-      expect(json['ward'], 'Ward A');
+      expect(json['wardId'], 'ward-01');
 
       final fromMapUser = UserModel.fromMap(json, 'user-123');
-      expect(fromMapUser.id, 'user-123');
-      expect(fromMapUser.fullName, 'Dr. Ramesh');
+      expect(fromMapUser.userId, 'user-123');
+      expect(fromMapUser.name, 'Dr. Ramesh');
       expect(fromMapUser.role, UserRole.supervisor);
       expect(fromMapUser.status, UserStatus.pending);
-      expect(fromMapUser.ward, 'Ward A');
+      expect(fromMapUser.wardId, 'ward-01');
     });
 
     test('UserModel copyWith works accurately', () {
       final user = UserModel(
-        id: 'user-1',
-        fullName: 'Asha Singh',
+        userId: 'user-1',
+        name: 'Asha Singh',
         employeeId: 'WRK-101',
         email: 'asha@hospital.org',
-        password: 'pass',
         role: UserRole.worker,
         status: UserStatus.pending,
       );
@@ -214,10 +244,9 @@ void main() {
         wardId: 'Emergency Ward',
       );
 
-      expect(availableUser.id, 'user-1');
+      expect(availableUser.userId, 'user-1');
       expect(availableUser.status, UserStatus.available);
       expect(availableUser.wardId, 'Emergency Ward');
-      expect(availableUser.ward, 'Emergency Ward');
       expect(availableUser.role, UserRole.worker);
     });
 

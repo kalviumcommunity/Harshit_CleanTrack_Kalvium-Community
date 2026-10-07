@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
 import '../widgets/app_logo.dart';
+import 'login_screen.dart';
 
 class PendingVerificationScreen extends StatelessWidget {
-  const PendingVerificationScreen({super.key});
+  final bool isNewlyRegistered;
+
+  const PendingVerificationScreen({
+    super.key,
+    this.isNewlyRegistered = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -73,19 +79,21 @@ class PendingVerificationScreen extends StatelessWidget {
                     ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text(
-                          'Registration successful',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF0F172A),
-                            letterSpacing: -0.3,
+                      children: [
+                        if (isNewlyRegistered) ...[
+                          const Text(
+                            'Registration successful',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF0F172A),
+                              letterSpacing: -0.3,
+                            ),
+                            textAlign: TextAlign.center,
                           ),
-                          textAlign: TextAlign.center,
-                        ),
-                        SizedBox(height: 12),
-                        Text(
+                          const SizedBox(height: 12),
+                        ],
+                        const Text(
                           'Dashboard access will become available after an administrator verifies your identity.',
                           style: TextStyle(
                             fontSize: 14.5,
@@ -93,6 +101,37 @@ class PendingVerificationScreen extends StatelessWidget {
                             height: 1.45,
                           ),
                           textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 28),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 48,
+                          child: ElevatedButton(
+                            key: const Key('backToLoginButton'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0F172A),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                            ),
+                            onPressed: () {
+                              Navigator.pushAndRemoveUntil(
+                                context,
+                                MaterialPageRoute(builder: (_) => const LoginScreen()),
+                                (route) => false,
+                              );
+                            },
+                            child: const Text(
+                              'BACK TO LOGIN',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.1,
+                              ),
+                            ),
+                          ),
                         ),
                       ],
                     ),
