@@ -74,13 +74,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       setState(() {
         _generalErrorMessage = result.errorMessage ?? 'Registration failed. Please try again.';
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.errorMessage ?? 'Registration failed'),
-          backgroundColor: Colors.red.shade700,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
     }
   }
 
