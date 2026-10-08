@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
+import '../models/user_model.dart';
+import '../services/auth_service.dart';
 import '../widgets/app_logo.dart';
 import 'login_screen.dart';
 
-class PendingVerificationScreen extends StatelessWidget {
-  final bool isNewlyRegistered;
+class SuspensionScreen extends StatelessWidget {
+  final UserModel? user;
 
-  const PendingVerificationScreen({
-    super.key,
-    this.isNewlyRegistered = false,
-  });
+  const SuspensionScreen({super.key, this.user});
 
   @override
   Widget build(BuildContext context) {
@@ -23,14 +22,9 @@ class PendingVerificationScreen extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Logo Emblem
-                  const AppLogo(
-                    size: 64,
-                    iconSize: 36,
-                  ),
+                  // App Logo
+                  const AppLogo(size: 64, iconSize: 36),
                   const SizedBox(height: 16),
-
-                  // Brand Title
                   const Text(
                     'CleanTrack',
                     style: TextStyle(
@@ -42,8 +36,6 @@ class PendingVerificationScreen extends StatelessWidget {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 6),
-
-                  // Brand Subtitle
                   const Text(
                     'Hospital Housekeeping Management',
                     style: TextStyle(
@@ -53,21 +45,21 @@ class PendingVerificationScreen extends StatelessWidget {
                     ),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 48),
+                  const SizedBox(height: 40),
 
-                  // Success / Verification Status Card (Exact match to design)
+                  // Suspension Card
                   Container(
                     width: double.infinity,
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(44),
                       border: Border.all(
-                        color: const Color(0xFFE2E8F0),
+                        color: Colors.red.shade200,
                         width: 1.5,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF0F172A).withValues(alpha: 0.03),
+                          color: const Color(0xFF0F172A).withValues(alpha: 0.04),
                           blurRadius: 16,
                           offset: const Offset(0, 4),
                         ),
@@ -75,30 +67,54 @@ class PendingVerificationScreen extends StatelessWidget {
                     ),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 28,
-                      vertical: 38,
+                      vertical: 36,
                     ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (isNewlyRegistered) ...[
-                          const Text(
-                            'Registration successful',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF0F172A),
-                              letterSpacing: -0.3,
-                            ),
-                            textAlign: TextAlign.center,
+                        Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade50,
+                            shape: BoxShape.circle,
                           ),
-                          const SizedBox(height: 12),
-                        ],
+                          child: Icon(
+                            Icons.block,
+                            color: Colors.red.shade700,
+                            size: 32,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
                         const Text(
-                          'Dashboard access will become available after an administrator verifies your identity.',
+                          'Account Suspended',
                           style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF0F172A),
+                            letterSpacing: -0.3,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          user?.name.isNotEmpty == true
+                              ? 'Hello ${user!.name}, your account access is currently blocked due to policy limits or missed deadlines.'
+                              : 'Your account access is currently blocked due to policy limits or missed deadlines.',
+                          style: const TextStyle(
                             fontSize: 14.5,
                             color: Color(0xFF475569),
                             height: 1.45,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'Please contact your Hospital Administrator to review your account status.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF64748B),
+                            height: 1.4,
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -107,7 +123,7 @@ class PendingVerificationScreen extends StatelessWidget {
                           width: double.infinity,
                           height: 48,
                           child: ElevatedButton(
-                            key: const Key('backToLoginButton'),
+                            key: const Key('suspensionLogoutButton'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF0F172A),
                               foregroundColor: Colors.white,
@@ -116,12 +132,15 @@ class PendingVerificationScreen extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(24),
                               ),
                             ),
-                            onPressed: () {
-                              Navigator.pushAndRemoveUntil(
-                                context,
-                                MaterialPageRoute(builder: (_) => const LoginScreen()),
-                                (route) => false,
-                              );
+                            onPressed: () async {
+                              await AuthService().signOut();
+                              if (context.mounted) {
+                                Navigator.pushAndRemoveUntil(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                                  (route) => false,
+                                );
+                              }
                             },
                             child: const Text(
                               'BACK TO LOGIN',

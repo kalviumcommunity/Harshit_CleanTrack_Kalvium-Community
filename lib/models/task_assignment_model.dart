@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 enum AssignmentStatus {
   completed,
   pendingVerification,
@@ -42,11 +44,21 @@ enum AssignmentStatus {
   }
 }
 
+DateTime _parseDateTime(dynamic value, [DateTime? fallback]) {
+  if (value is Timestamp) return value.toDate();
+  if (value is DateTime) return value;
+  if (value is String) return DateTime.tryParse(value) ?? fallback ?? DateTime.now();
+  if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+  return fallback ?? DateTime.now();
+}
+
 class TaskAssignmentModel {
-  final String id;
+  final String assignmentId;
+  final DocumentReference? taskRef;
   final String taskId;
+  final DocumentReference? workerRef;
   final String workerId;
-  final String? supervisorId;
+  final DocumentReference? supervisorRef;
   final String wardId;
   final int assignmentNumber;
   final String? supervisorFeedback;
@@ -58,10 +70,12 @@ class TaskAssignmentModel {
   final AssignmentStatus status;
 
   TaskAssignmentModel({
-    required this.id,
+    required this.assignmentId,
+    this.taskRef,
     required this.taskId,
+    this.workerRef,
     required this.workerId,
-    this.supervisorId,
+    this.supervisorRef,
     required this.wardId,
     this.assignmentNumber = 1,
     this.supervisorFeedback,
@@ -73,15 +87,14 @@ class TaskAssignmentModel {
     this.status = AssignmentStatus.pendingVerification,
   }) : assignedAt = assignedAt ?? DateTime.now();
 
-  String get assignmentId => id;
-
   Map<String, dynamic> toJson() {
     return {
-      'assignmentId': id,
-      'id': id,
+      'assignmentId': assignmentId,
+      'taskRef': taskRef,
       'taskId': taskId,
+      'workerRef': workerRef,
       'workerId': workerId,
-      'supervisorId': supervisorId,
+      'supervisorRef': supervisorRef,
       'wardId': wardId,
       'assignmentNumber': assignmentNumber,
       'supervisorFeedback': supervisorFeedback,
@@ -96,35 +109,31 @@ class TaskAssignmentModel {
 
   factory TaskAssignmentModel.fromMap(Map<String, dynamic> map, String id) {
     return TaskAssignmentModel(
-      id: id,
+      assignmentId: id,
+      taskRef: map['taskRef'] is DocumentReference ? map['taskRef'] as DocumentReference : null,
       taskId: map['taskId'] ?? '',
+      workerRef: map['workerRef'] is DocumentReference ? map['workerRef'] as DocumentReference : null,
       workerId: map['workerId'] ?? '',
-      supervisorId: map['supervisorId'],
+      supervisorRef: map['supervisorRef'] is DocumentReference ? map['supervisorRef'] as DocumentReference : null,
       wardId: map['wardId'] ?? '',
       assignmentNumber: (map['assignmentNumber'] as num?)?.toInt() ?? 1,
       supervisorFeedback: map['supervisorFeedback'],
       attempts: (map['attempts'] as num?)?.toInt() ?? 1,
-      deadline: map['deadline'] != null
-          ? DateTime.tryParse(map['deadline'].toString()) ?? DateTime.now().add(const Duration(hours: 24))
-          : DateTime.now().add(const Duration(hours: 24)),
-      assignedAt: map['assignedAt'] != null
-          ? DateTime.tryParse(map['assignedAt'].toString()) ?? DateTime.now()
-          : DateTime.now(),
-      completedAt: map['completedAt'] != null
-          ? DateTime.tryParse(map['completedAt'].toString())
-          : null,
-      verifiedAt: map['verifiedAt'] != null
-          ? DateTime.tryParse(map['verifiedAt'].toString())
-          : null,
+      deadline: _parseDateTime(map['deadline'], DateTime.now().add(const Duration(hours: 24))),
+      assignedAt: _parseDateTime(map['assignedAt']),
+      completedAt: map['completedAt'] != null ? _parseDateTime(map['completedAt']) : null,
+      verifiedAt: map['verifiedAt'] != null ? _parseDateTime(map['verifiedAt']) : null,
       status: AssignmentStatus.fromString(map['status']),
     );
   }
 
   TaskAssignmentModel copyWith({
-    String? id,
+    String? assignmentId,
+    DocumentReference? taskRef,
     String? taskId,
+    DocumentReference? workerRef,
     String? workerId,
-    String? supervisorId,
+    DocumentReference? supervisorRef,
     String? wardId,
     int? assignmentNumber,
     String? supervisorFeedback,
@@ -136,10 +145,12 @@ class TaskAssignmentModel {
     AssignmentStatus? status,
   }) {
     return TaskAssignmentModel(
-      id: id ?? this.id,
+      assignmentId: assignmentId ?? this.assignmentId,
+      taskRef: taskRef ?? this.taskRef,
       taskId: taskId ?? this.taskId,
+      workerRef: workerRef ?? this.workerRef,
       workerId: workerId ?? this.workerId,
-      supervisorId: supervisorId ?? this.supervisorId,
+      supervisorRef: supervisorRef ?? this.supervisorRef,
       wardId: wardId ?? this.wardId,
       assignmentNumber: assignmentNumber ?? this.assignmentNumber,
       supervisorFeedback: supervisorFeedback ?? this.supervisorFeedback,

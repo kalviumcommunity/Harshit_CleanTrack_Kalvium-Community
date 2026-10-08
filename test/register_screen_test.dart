@@ -185,7 +185,7 @@ void main() {
     final users = AuthService().registeredUsers;
     expect(users.length, 1);
     expect(users.first.status, UserStatus.pending);
-    expect(users.first.ward, isNull);
+    expect(users.first.wardId, isNull);
     expect(users.first.role, UserRole.worker);
   });
 
@@ -281,8 +281,8 @@ void main() {
     await tester.tap(find.byKey(const Key('loginLink')));
     await tester.pumpAndSettle();
 
-    // Login screen displays the Login page heading and register action
-    expect(find.text('Login page'), findsOneWidget);
+    // Login screen displays the Welcome Back heading and register action
+    expect(find.text('Welcome Back'), findsOneWidget);
     expect(find.byKey(const Key('goToRegisterButton')), findsOneWidget);
   });
 
@@ -298,7 +298,7 @@ void main() {
       ),
     );
 
-    expect(find.text('Login page'), findsOneWidget);
+    expect(find.text('Welcome Back'), findsOneWidget);
     expect(find.byKey(const Key('goToRegisterButton')), findsOneWidget);
 
     // Tap to go to register
@@ -316,7 +316,7 @@ void main() {
 
     await tester.pumpWidget(
       const MaterialApp(
-        home: PendingVerificationScreen(),
+        home: PendingVerificationScreen(isNewlyRegistered: true),
       ),
     );
 
@@ -327,5 +327,13 @@ void main() {
       find.text('Dashboard access will become available after an administrator verifies your identity.'),
       findsOneWidget,
     );
+    expect(find.byKey(const Key('backToLoginButton')), findsOneWidget);
+    expect(find.text('BACK TO LOGIN'), findsOneWidget);
+
+    // Tap BACK TO LOGIN button
+    await tester.tap(find.byKey(const Key('backToLoginButton')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Welcome Back'), findsOneWidget);
   });
 }

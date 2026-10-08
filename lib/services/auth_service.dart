@@ -48,10 +48,13 @@ class AuthService {
 
   final List<UserModel> _registeredUsers = [];
 
+  final Map<String, String> _userPasswords = {};
+
   List<UserModel> get registeredUsers => List.unmodifiable(_registeredUsers);
 
   void clearUsers() {
     _registeredUsers.clear();
+    _userPasswords.clear();
   }
 
   bool get isFirebaseAvailable {
@@ -99,6 +102,8 @@ class AuthService {
     return null;
   }
 
+  static final RegExp _nameRegex = RegExp(r'^[a-zA-Z\s]+$');
+
   /// Validates full name
   static String? validateFullName(String? value) {
     if (value == null || value.trim().isEmpty) {
@@ -106,6 +111,9 @@ class AuthService {
     }
     if (value.trim().length < 2) {
       return 'Full Name must be at least 2 characters long';
+    }
+    if (!_nameRegex.hasMatch(value.trim())) {
+      return 'Full Name can only contain letters and spaces';
     }
     return null;
   }
@@ -144,6 +152,11 @@ class AuthService {
     final cleanEmployeeId = employeeId.trim().toUpperCase();
     final cleanEmail = email.trim().toLowerCase();
 
+    final nameError = validateFullName(cleanFullName);
+    if (nameError != null) {
+      return RegisterResult.failure(nameError);
+    }
+
     // Local pre-checks for fast client validation & test environments
     final isEmailDuplicate = _registeredUsers.any(
       (user) => user.email.toLowerCase() == cleanEmail,
@@ -165,7 +178,15 @@ class AuthService {
 
     if (isFirebaseAvailable) {
       try {
-        // 1. Create User in Firebase Auth
+        // Check Employee ID uniqueness in Cloud Firestore before creating account
+        final isEmployeeIdTaken = await _firestoreService.isEmployeeIdRegistered(cleanEmployeeId);
+        if (isEmployeeIdTaken) {
+          return const RegisterResult.failure(
+            'This Employee ID is already registered.',
+          );
+        }
+
+        // 1. Create User in Firebase Auth (checks email uniqueness automatically)
         final userCredential = await auth.createUserWithEmailAndPassword(
           email: cleanEmail,
           password: password,
@@ -181,18 +202,22 @@ class AuthService {
 
         // 3. Create UserModel
         final newUser = UserModel(
-          id: firebaseUser.uid,
-          fullName: cleanFullName,
+          userId: firebaseUser.uid,
+          name: cleanFullName,
           employeeId: cleanEmployeeId,
           email: cleanEmail,
-          password: password,
           role: role,
           status: UserStatus.pending,
-          ward: null,
         );
 
         // 4. Store user profile and status in Firestore via FirestoreService
-        await _firestoreService.saveUserProfile(newUser);
+        final isSaved = await _firestoreService.saveUserProfile(newUser);
+        if (!isSaved) {
+          try {
+            await firebaseUser.delete();
+          } catch (_) {}
+          return const RegisterResult.failure('Failed to save user profile. Please try again.');
+        }
 
         _registeredUsers.add(newUser);
         return RegisterResult.success(newUser);
@@ -203,18 +228,18 @@ class AuthService {
       }
     } else {
       // In-memory fallback (used in unit/widget tests or offline development)
+      final generatedId = DateTime.now().millisecondsSinceEpoch.toString();
       final newUser = UserModel(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        fullName: cleanFullName,
+        userId: generatedId,
+        name: cleanFullName,
         employeeId: cleanEmployeeId,
         email: cleanEmail,
-        password: password,
         role: role,
         status: UserStatus.pending,
-        ward: null,
       );
 
       _registeredUsers.add(newUser);
+      _userPasswords[newUser.userId] = password;
       return RegisterResult.success(newUser);
     }
   }
@@ -238,32 +263,29 @@ class AuthService {
           return const LoginResult.failure('Failed to authenticate.');
         }
 
-        // Fetch user data from Firestore
+        // Fetch user profile from Cloud Firestore
         final userProfile = await _firestoreService.getUserProfile(firebaseUser.uid);
         if (userProfile != null) {
           return LoginResult.success(userProfile);
         }
 
-        // Fallback user if Firestore document is not yet configured
-        final user = UserModel(
-          id: firebaseUser.uid,
-          fullName: firebaseUser.displayName ?? '',
-          employeeId: '',
-          email: cleanEmail,
-          password: '',
-          role: UserRole.supervisor,
-          status: UserStatus.pending,
+        // If the profile does not exist in Firestore, sign out to avoid dangling auth session
+        await auth.signOut();
+        return const LoginResult.failure(
+          'User profile not found in database. Please contact your hospital administrator.',
         );
-        return LoginResult.success(user);
       } on FirebaseAuthException catch (e) {
         return LoginResult.failure(_handleFirebaseAuthError(e));
       } catch (e) {
+        try {
+          await auth.signOut();
+        } catch (_) {}
         return LoginResult.failure('Login failed: ${e.toString()}');
       }
     } else {
       // In-memory fallback
       final match = _registeredUsers.where(
-        (u) => u.email.toLowerCase() == cleanEmail && u.password == password,
+        (u) => u.email.toLowerCase() == cleanEmail && _userPasswords[u.userId] == password,
       );
       if (match.isNotEmpty) {
         return LoginResult.success(match.first);

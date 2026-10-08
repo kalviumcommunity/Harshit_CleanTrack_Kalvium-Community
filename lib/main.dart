@@ -35,6 +35,10 @@ class CleanTrackApp extends StatelessWidget {
         useMaterial3: true,
         scaffoldBackgroundColor: const Color(0xFFF8FAFC),
       ),
+      scrollBehavior: const MaterialScrollBehavior().copyWith(
+        overscroll: false,
+        physics: const ClampingScrollPhysics(),
+      ),
       home: const SplashScreen(),
       routes: {
         '/register': (context) => const RegisterScreen(),

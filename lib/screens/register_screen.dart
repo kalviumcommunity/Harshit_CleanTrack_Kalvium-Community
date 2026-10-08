@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../widgets/app_logo.dart';
@@ -68,7 +69,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (result.isSuccess && result.user != null) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const PendingVerificationScreen()),
+        MaterialPageRoute(
+          builder: (_) => const PendingVerificationScreen(isNewlyRegistered: true),
+        ),
       );
     } else {
       setState(() {
@@ -213,6 +216,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
               key: const Key('fullNameField'),
               controller: _nameController,
               textCapitalization: TextCapitalization.words,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z\s]')),
+              ],
               decoration: _inputDecoration(hintText: 'e.g. Neha Sharma'),
               validator: AuthService.validateFullName,
             ),
@@ -226,16 +232,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
               controller: _employeeIdController,
               textCapitalization: TextCapitalization.characters,
               decoration: _inputDecoration(
-                hintText: 'E.G. SUP-001 OR WRK-001',
+                hintText: _selectedRole == UserRole.supervisor
+                    ? 'e.g. SUP-001'
+                    : 'e.g. WRK-001',
               ),
               validator: (value) => AuthService.validateEmployeeId(value, _selectedRole),
             ),
             const SizedBox(height: 4),
-            const Padding(
-              padding: EdgeInsets.only(left: 4.0),
+            Padding(
+              padding: const EdgeInsets.only(left: 4.0),
               child: Text(
-                'Supervisor: SUP-001 • Worker: WRK-001',
-                style: TextStyle(
+                _selectedRole == UserRole.supervisor
+                    ? 'Supervisor ID format: SUP-001 (e.g., SUP-101)'
+                    : 'Worker ID format: WRK-001 (e.g., WRK-101)',
+                style: const TextStyle(
                   fontSize: 12,
                   color: Color(0xFF64748B),
                   fontWeight: FontWeight.w400,
