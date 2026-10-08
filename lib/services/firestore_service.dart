@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
+import 'auth_service.dart';
 
 class FirestoreService {
   static final FirestoreService _instance = FirestoreService._internal();
@@ -26,6 +27,9 @@ class FirestoreService {
 
   CollectionReference<Map<String, dynamic>> get _usersCollection =>
       firestore.collection('users');
+
+  CollectionReference<Map<String, dynamic>> get _wardsCollection =>
+      firestore.collection('wards');
 
   /// Saves or updates a user profile in the Firestore 'users' collection
   Future<bool> saveUserProfile(UserModel user) async {
@@ -150,4 +154,103 @@ class FirestoreService {
       return [];
     }
   }
+
+  /// Streams real-time workforce statistics for the Admin Dashboard
+  Stream<AdminDashboardStats> streamAdminDashboardStats() async* {
+    AdminDashboardStats getFallbackStats() {
+      final inMemory = AuthService().registeredUsers;
+      int supervisors = 0;
+      int workers = 0;
+      int pending = 0;
+      for (final u in inMemory) {
+        if (u.role == UserRole.supervisor) supervisors++;
+        if (u.role == UserRole.worker) workers++;
+        if (u.status == UserStatus.pending) pending++;
+      }
+      return AdminDashboardStats(
+        totalWards: 0,
+        totalSupervisors: supervisors,
+        totalWorkers: workers,
+        pendingRegistrations: pending,
+      );
+    }
+
+    if (!isFirebaseAvailable) {
+      yield getFallbackStats();
+      return;
+    }
+
+    // Immediately yield current in-memory stats while Firestore connects
+    yield getFallbackStats();
+
+    try {
+      await for (final usersSnap in _usersCollection.snapshots()) {
+        int realWardsCount = 0;
+        try {
+          final wardsSnap = await _wardsCollection.get();
+          realWardsCount = wardsSnap.docs.length;
+        } catch (e) {
+          debugPrint('Notice: Wards collection read in admin stats: $e');
+        }
+
+        int supervisors = 0;
+        int workers = 0;
+        int pending = 0;
+
+        final seenUserIds = <String>{};
+
+        for (final doc in usersSnap.docs) {
+          seenUserIds.add(doc.id);
+          final data = doc.data();
+          final roleStr = (data['role'] ?? '').toString().toLowerCase();
+          final statusStr = (data['status'] ?? '').toString().toLowerCase();
+
+          if (roleStr.contains('supervisor') || roleStr == 'supervisor') {
+            supervisors++;
+          } else if (roleStr.contains('worker') || roleStr == 'worker') {
+            workers++;
+          }
+
+          if (statusStr.contains('pending') || statusStr == 'pending') {
+            pending++;
+          }
+        }
+
+        // Also merge any in-memory registered users that may not have synced
+        for (final u in AuthService().registeredUsers) {
+          if (!seenUserIds.contains(u.userId)) {
+            if (u.role == UserRole.supervisor) supervisors++;
+            if (u.role == UserRole.worker) workers++;
+            if (u.status == UserStatus.pending) pending++;
+          }
+        }
+
+        yield AdminDashboardStats(
+          totalWards: realWardsCount,
+          totalSupervisors: supervisors,
+          totalWorkers: workers,
+          pendingRegistrations: pending,
+        );
+      }
+    } catch (e) {
+      debugPrint('Firestore stream error in admin stats: $e');
+      yield getFallbackStats();
+    }
+  }
 }
+
+/// Snapshot model for Admin Dashboard workforce overview
+class AdminDashboardStats {
+  final int totalWards;
+  final int totalSupervisors;
+  final int totalWorkers;
+  final int pendingRegistrations;
+
+  const AdminDashboardStats({
+    this.totalWards = 0,
+    this.totalSupervisors = 0,
+    this.totalWorkers = 0,
+    this.pendingRegistrations = 0,
+  });
+}
+
