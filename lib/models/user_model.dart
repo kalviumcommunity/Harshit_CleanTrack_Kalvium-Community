@@ -129,6 +129,8 @@ class UserModel {
     return {
       'userId': userId,
       'name': name,
+      'fullName': name,
+      'displayName': name,
       'employeeId': employeeId,
       'email': email,
       'role': role.displayName,
@@ -141,9 +143,14 @@ class UserModel {
   }
 
   factory UserModel.fromMap(Map<String, dynamic> map, String id) {
+    final extractedName = (map['name'] as String?)?.trim() ??
+        (map['fullName'] as String?)?.trim() ??
+        (map['displayName'] as String?)?.trim() ??
+        '';
+
     return UserModel(
       userId: id,
-      name: map['name'] ?? '',
+      name: extractedName,
       employeeId: map['employeeId'] ?? '',
       email: map['email'] ?? '',
       role: UserRole.fromString(map['role']),
