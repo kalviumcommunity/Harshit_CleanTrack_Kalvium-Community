@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -6,6 +7,7 @@ import '../models/ward_model.dart';
 import '../models/task_model.dart';
 import '../models/task_assignment_model.dart';
 import 'auth_service.dart';
+import 'ward_seed_service.dart';
 
 class SupervisorDashboardStats {
   final int availableWorkers;
@@ -232,6 +234,239 @@ class FirestoreService {
     return _inMemoryUsers.any((u) => u.employeeId.toUpperCase() == cleanId);
   }
 
+  /// Assigns a user to a ward (activating pending supervisor to Assigned or worker to Available)
+  Future<bool> assignUserToWard({
+    required String userId,
+    required String wardId,
+    required UserRole role,
+  }) async {
+    final UserStatus newStatus = (role == UserRole.supervisor)
+        ? UserStatus.assigned
+        : UserStatus.available;
+
+    final cleanWardName = formatWardDisplayName(wardId);
+
+    // 1. In-memory user update
+    final idx = _inMemoryUsers.indexWhere((u) => u.userId == userId);
+    if (idx != -1) {
+      _inMemoryUsers[idx] = _inMemoryUsers[idx].copyWith(
+        wardId: wardId,
+        wardName: cleanWardName,
+        status: newStatus,
+      );
+      AuthService().updateUser(_inMemoryUsers[idx]);
+    } else {
+      final authIdx = AuthService().registeredUsers.indexWhere((u) => u.userId == userId);
+      if (authIdx != -1) {
+        final updated = AuthService().registeredUsers[authIdx].copyWith(
+          wardId: wardId,
+          wardName: cleanWardName,
+          status: newStatus,
+        );
+        AuthService().updateUser(updated);
+        _inMemoryUsers.add(updated);
+      }
+    }
+
+    // 2. In-memory ward update (if supervisor, link supervisor to ward)
+    if (role == UserRole.supervisor) {
+      final wardIdx = _inMemoryWards.indexWhere((w) => w.wardId == wardId || w.name == cleanWardName);
+      if (wardIdx != -1) {
+        _inMemoryWards[wardIdx] = _inMemoryWards[wardIdx].copyWith(
+          name: cleanWardName,
+          supervisorId: userId,
+        );
+      } else {
+        final defWard = defaultHospitalWards.firstWhere(
+          (w) => w.wardId == wardId || w.name == cleanWardName,
+          orElse: () => WardModel(wardId: wardId, name: cleanWardName),
+        );
+        _inMemoryWards.add(defWard.copyWith(supervisorId: userId));
+      }
+    }
+
+    // 3. Firestore persistence
+    if (isFirebaseAvailable) {
+      try {
+        final userUpdate = <String, dynamic>{
+          'wardId': wardId,
+          'wardName': cleanWardName,
+          'status': newStatus.displayName,
+          'wardRef': _wardsCollection.doc(wardId),
+        };
+        await _usersCollection.doc(userId).update(userUpdate);
+
+        if (role == UserRole.supervisor) {
+          await _wardsCollection.doc(wardId).set({
+            'name': cleanWardName,
+            'supervisorId': userId,
+            'supervisorRef': _usersCollection.doc(userId),
+          }, SetOptions(merge: true));
+        }
+        return true;
+      } catch (e) {
+        debugPrint('Error assigning user to ward in Firestore: $e');
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Streams pending users awaiting ward assignment / activation
+  Stream<List<UserModel>> streamPendingUsers({UserRole? role}) {
+    if (isFirebaseAvailable) {
+      return _usersCollection.snapshots().map((snapshot) {
+        final list = <UserModel>[];
+        final seenIds = <String>{};
+
+        for (final doc in snapshot.docs) {
+          final data = doc.data();
+          final user = UserModel.fromMap(data, doc.id);
+          if (user.status == UserStatus.pending) {
+            if (role == null || user.role == role) {
+              list.add(user);
+              seenIds.add(user.userId);
+              if (user.employeeId.isNotEmpty) {
+                seenIds.add(user.employeeId.toLowerCase());
+              }
+              if (user.email.isNotEmpty) {
+                seenIds.add(user.email.toLowerCase());
+              }
+            }
+          }
+        }
+
+        for (final u in [..._inMemoryUsers, ...AuthService().registeredUsers]) {
+          final isSeen = seenIds.contains(u.userId) ||
+              (u.employeeId.isNotEmpty && seenIds.contains(u.employeeId.toLowerCase())) ||
+              (u.email.isNotEmpty && seenIds.contains(u.email.toLowerCase()));
+          if (!isSeen && u.status == UserStatus.pending) {
+            if (role == null || u.role == role) {
+              list.add(u);
+              seenIds.add(u.userId);
+            }
+          }
+        }
+
+        return list;
+      });
+    }
+
+    final all = <UserModel>[..._inMemoryUsers, ...AuthService().registeredUsers];
+    final unique = <String, UserModel>{};
+    for (final u in all) {
+      if (u.status == UserStatus.pending) {
+        if (role == null || u.role == role) {
+          unique[u.userId] = u;
+        }
+      }
+    }
+    return Stream.value(unique.values.toList());
+  }
+
+  /// Seeds demo pending personnel when needed for demonstration/testing
+  void seedDemoPendingUsers() {
+    final demoUsers = [
+      UserModel(
+        userId: 'sup-012',
+        name: 'Neha Sharma',
+        employeeId: 'SUP-012',
+        email: 'neha.sharma@cleantrack.org',
+        role: UserRole.supervisor,
+        status: UserStatus.pending,
+      ),
+      UserModel(
+        userId: 'wrk-125',
+        name: 'Ravi Kumar',
+        employeeId: 'WRK-125',
+        email: 'ravi.kumar@cleantrack.org',
+        role: UserRole.worker,
+        status: UserStatus.pending,
+      ),
+      UserModel(
+        userId: 'wrk-128',
+        name: 'Vikram Patel',
+        employeeId: 'WRK-128',
+        email: 'vikram.patel@cleantrack.org',
+        role: UserRole.worker,
+        status: UserStatus.pending,
+      ),
+    ];
+
+    for (final user in demoUsers) {
+      if (!_inMemoryUsers.any((u) => u.employeeId == user.employeeId)) {
+        _inMemoryUsers.add(user);
+        AuthService().updateUser(user);
+      }
+    }
+  }
+
+  /// Permanently deletes/rejects a user registration from Firestore and memory
+  Future<bool> deleteUser(String userId, {String? employeeId, String? email}) async {
+    try {
+      _inMemoryUsers.removeWhere((u) =>
+          u.userId == userId ||
+          (employeeId != null &&
+              employeeId.isNotEmpty &&
+              u.employeeId.trim().toLowerCase() == employeeId.trim().toLowerCase()) ||
+          (email != null &&
+              email.isNotEmpty &&
+              u.email.trim().toLowerCase() == email.trim().toLowerCase()));
+
+      AuthService().removeUser(userId, employeeId: employeeId, email: email);
+
+      if (isFirebaseAvailable) {
+        // 1. Direct document deletion by userId
+        try {
+          await _usersCollection.doc(userId).delete();
+        } catch (e) {
+          debugPrint('Direct doc delete failed ($e)');
+        }
+
+        // 2. Also clean up by employeeId query if present
+        if (employeeId != null && employeeId.isNotEmpty) {
+          try {
+            final query = await _usersCollection.where('employeeId', isEqualTo: employeeId).get();
+            for (final doc in query.docs) {
+              try {
+                await doc.reference.delete();
+              } catch (_) {}
+            }
+          } catch (e) {
+            debugPrint('EmployeeId cleanup caught: $e');
+          }
+        }
+
+        // 3. Also clean up by email query if present
+        if (email != null && email.isNotEmpty) {
+          try {
+            final cleanEmail = email.trim().toLowerCase();
+            final query = await _usersCollection.where('email', isEqualTo: cleanEmail).get();
+            for (final doc in query.docs) {
+              try {
+                await doc.reference.delete();
+              } catch (_) {}
+            }
+          } catch (e) {
+            debugPrint('Email cleanup caught: $e');
+          }
+        }
+
+        // 4. Unlink any ward where this user was supervisor
+        try {
+          final wardQuery = await _wardsCollection.where('supervisorId', isEqualTo: userId).get();
+          for (final doc in wardQuery.docs) {
+            await doc.reference.update({'supervisorId': null});
+          }
+        } catch (_) {}
+      }
+      return true;
+    } catch (e) {
+      debugPrint('deleteUser caught general error: $e');
+      return true;
+    }
+  }
+
   /// Gets users by status
   Future<List<UserModel>> getUsersByStatus(UserStatus status) async {
     if (isFirebaseAvailable) {
@@ -254,20 +489,30 @@ class FirestoreService {
 
   /// Fetches a ward by ID from Firestore
   Future<WardModel?> getWard(String wardId) async {
+    if (wardId.isEmpty) return null;
     if (isFirebaseAvailable) {
       try {
         final doc = await _wardsCollection.doc(wardId).get();
         if (doc.exists && doc.data() != null) {
           return WardModel.fromMap(doc.data()!, doc.id);
         }
-        return null;
+        // Also check uppercase Wards collection or formatted name document
+        final docW = await firestore.collection('Wards').doc(wardId).get();
+        if (docW.exists && docW.data() != null) {
+          return WardModel.fromMap(docW.data()!, docW.id);
+        }
       } catch (e) {
         debugPrint('Error fetching ward from Firestore: $e');
-        return null;
       }
     }
-    final memWard = _inMemoryWards.where((w) => w.wardId == wardId);
-    return memWard.isNotEmpty ? memWard.first : null;
+    final clean = formatWardDisplayName(wardId);
+    final memWard = _inMemoryWards.where((w) => w.wardId == wardId || w.name == clean || w.wardId == clean);
+    if (memWard.isNotEmpty) return memWard.first;
+
+    final defWard = defaultHospitalWards.where((w) => w.wardId == wardId || w.name == clean);
+    if (defWard.isNotEmpty) return defWard.first;
+
+    return WardModel(wardId: wardId, name: clean);
   }
 
   /// Streams a ward by ID from Firestore
@@ -277,11 +522,20 @@ class FirestoreService {
         if (snapshot.exists && snapshot.data() != null) {
           return WardModel.fromMap(snapshot.data()!, snapshot.id);
         }
-        return null;
+        return defaultHospitalWards.firstWhere(
+          (w) => w.wardId == wardId || w.name == formatWardDisplayName(wardId),
+          orElse: () => WardModel(wardId: wardId, name: formatWardDisplayName(wardId)),
+        );
       });
     }
-    final memWard = _inMemoryWards.where((w) => w.wardId == wardId);
-    return Stream.value(memWard.isNotEmpty ? memWard.first : null);
+    final clean = formatWardDisplayName(wardId);
+    final memWard = _inMemoryWards.where((w) => w.wardId == wardId || w.name == clean || w.wardId == clean);
+    return Stream.value(memWard.isNotEmpty
+        ? memWard.first
+        : defaultHospitalWards.firstWhere(
+            (w) => w.wardId == wardId || w.name == clean,
+            orElse: () => WardModel(wardId: wardId, name: clean),
+          ));
   }
 
   /// Saves or updates a ward document in Firestore
@@ -297,6 +551,129 @@ class FirestoreService {
       }
     }
     return true;
+  }
+
+  /// Default hospital wards list (ICU 1, ICU 2, ICU 3, Minor OT, OT 1, OT 2)
+  static List<WardModel> get defaultHospitalWards => WardSeedService.defaultHospitalWards;
+
+  /// Seeds default hospital wards into Cloud Firestore if the wards collection is empty
+  Future<bool> seedInitialWardsToFirestore({bool overwrite = false}) async {
+    if (!isFirebaseAvailable) {
+      if (overwrite) {
+        for (final ward in defaultHospitalWards) {
+          seedWard(ward);
+        }
+      }
+      return true;
+    }
+
+    for (final ward in defaultHospitalWards) {
+      seedWard(ward);
+    }
+
+    return await WardSeedService.seedWards(
+      overwrite: overwrite,
+      firestoreInstance: firestore,
+    );
+  }
+
+  /// Creates a new ward in Firestore and in-memory (PRD W04)
+  Future<WardModel?> createWard(String wardName) async {
+    final cleanName = formatWardDisplayName(wardName);
+    final slug = cleanName
+        .toLowerCase()
+        .replaceAll(RegExp(r'\s+ward$'), '')
+        .trim()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '_');
+    final wardId = slug.startsWith('ward_') ? slug : 'ward_$slug';
+
+    final newWard = WardModel(
+      wardId: wardId,
+      name: cleanName,
+      createdAt: DateTime.now(),
+    );
+
+    seedWard(newWard);
+
+    if (isFirebaseAvailable) {
+      try {
+        await _wardsCollection.doc(wardId).set(
+          newWard.toJson(),
+          SetOptions(merge: true),
+        );
+        debugPrint('Successfully created ward in Firestore: $cleanName ($wardId)');
+      } catch (e) {
+        debugPrint('Error creating ward in Firestore: $e');
+      }
+    }
+
+    return newWard;
+  }
+
+  /// Deletes a ward from Firestore and in-memory
+  Future<bool> deleteWard(String wardId) async {
+    _inMemoryWards.removeWhere((w) => w.wardId == wardId);
+    if (isFirebaseAvailable) {
+      try {
+        await _wardsCollection.doc(wardId).delete();
+        return true;
+      } catch (e) {
+        debugPrint('Error deleting ward from Firestore: $e');
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Gets all wards from Firestore or memory, auto-seeding to Firestore if empty
+  Future<List<WardModel>> getWards() async {
+    if (isFirebaseAvailable) {
+      try {
+        final query = await _wardsCollection.get();
+        if (query.docs.isNotEmpty) {
+          if (query.docs.any((d) =>
+              (d.data()['name'] ?? '').toString().contains('Ward') ||
+              d.data().containsKey('wardName') ||
+              d.data().containsKey('id'))) {
+            unawaited(seedInitialWardsToFirestore(overwrite: true));
+          }
+          return query.docs.map((doc) => WardModel.fromMap(doc.data(), doc.id)).toList();
+        } else {
+          // Check uppercase 'Wards' as fallback
+          final altQuery = await firestore.collection('Wards').get();
+          if (altQuery.docs.isNotEmpty) {
+            return altQuery.docs.map((doc) => WardModel.fromMap(doc.data(), doc.id)).toList();
+          }
+          await seedInitialWardsToFirestore();
+          final reQuery = await _wardsCollection.get();
+          if (reQuery.docs.isNotEmpty) {
+            return reQuery.docs.map((doc) => WardModel.fromMap(doc.data(), doc.id)).toList();
+          }
+        }
+      } catch (e) {
+        debugPrint('Error getting wards from Firestore: $e');
+      }
+    }
+    if (_inMemoryWards.isNotEmpty) {
+      return List.unmodifiable(_inMemoryWards);
+    }
+    return defaultHospitalWards;
+  }
+
+  /// Streams all wards in real time
+  Stream<List<WardModel>> streamWards() {
+    if (isFirebaseAvailable) {
+      return _wardsCollection.snapshots().map((snap) {
+        if (snap.docs.isNotEmpty) {
+          return snap.docs.map((d) => WardModel.fromMap(d.data(), d.id)).toList();
+        }
+        return defaultHospitalWards;
+      });
+    }
+    if (_inMemoryWards.isNotEmpty) {
+      return Stream.value(List.unmodifiable(_inMemoryWards));
+    }
+    return Stream.value(defaultHospitalWards);
   }
 
   // ==================== WORKER OPERATIONS FOR SUPERVISOR ====================
@@ -762,16 +1139,20 @@ class FirestoreService {
   }
 
   /// Streams real-time workforce statistics for the Admin Dashboard from Firestore
-  Stream<AdminDashboardStats> streamAdminDashboardStats() async* {
-    AdminDashboardStats getFallbackStats() {
+  /// Streams real-time workforce statistics for the Admin Dashboard from Firestore
+  Stream<AdminDashboardStats> streamAdminDashboardStats() {
+    AdminDashboardStats calculateFallbackStats() {
       final inMemory = AuthService().registeredUsers;
       int supervisors = 0;
       int workers = 0;
       int pending = 0;
       for (final u in inMemory) {
-        if (u.role == UserRole.supervisor) supervisors++;
-        if (u.role == UserRole.worker) workers++;
-        if (u.status == UserStatus.pending) pending++;
+        if (u.status == UserStatus.pending) {
+          pending++;
+        } else if (u.status != UserStatus.suspended) {
+          if (u.role == UserRole.supervisor) supervisors++;
+          if (u.role == UserRole.worker) workers++;
+        }
       }
       return AdminDashboardStats(
         totalWards: _inMemoryWards.length,
@@ -782,64 +1163,152 @@ class FirestoreService {
     }
 
     if (!isFirebaseAvailable) {
-      yield getFallbackStats();
-      return;
+      return Stream.value(calculateFallbackStats());
     }
 
-    yield getFallbackStats();
+    final controller = StreamController<AdminDashboardStats>.broadcast();
+    StreamSubscription? usersSub;
+    StreamSubscription? wardsSub;
 
-    try {
-      await for (final usersSnap in _usersCollection.snapshots()) {
-        int realWardsCount = 0;
-        try {
-          final wardsSnap = await _wardsCollection.get();
-          realWardsCount = wardsSnap.docs.length;
-        } catch (e) {
-          debugPrint('Notice: Wards collection read in admin stats: $e');
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> latestUsers = [];
+    int latestWardsCount = 0;
+
+    void recalculateAndEmit() {
+      if (controller.isClosed) return;
+      int supervisors = 0;
+      int workers = 0;
+      int pending = 0;
+      final seenUserIds = <String>{};
+
+      for (final doc in latestUsers) {
+        seenUserIds.add(doc.id);
+        final data = doc.data();
+        final roleStr = (data['role'] ?? '').toString().toLowerCase();
+        final statusStr = (data['status'] ?? '').toString().toLowerCase();
+
+        final isPending = statusStr == 'pending' || statusStr.contains('pending');
+        final isSuspended = statusStr == 'suspended' || statusStr.contains('suspended');
+
+        if (isPending) {
+          pending++;
         }
 
-        int supervisors = 0;
-        int workers = 0;
-        int pending = 0;
-
-        final seenUserIds = <String>{};
-
-        for (final doc in usersSnap.docs) {
-          seenUserIds.add(doc.id);
-          final data = doc.data();
-          final roleStr = (data['role'] ?? '').toString().toLowerCase();
-          final statusStr = (data['status'] ?? '').toString().toLowerCase();
-
-          if (roleStr.contains('supervisor') || roleStr == 'supervisor') {
+        // Do NOT count pending or suspended personnel in active workforce
+        if (!isPending && !isSuspended) {
+          if (roleStr == 'supervisor' || roleStr.contains('supervisor')) {
             supervisors++;
-          } else if (roleStr.contains('worker') || roleStr == 'worker') {
+          } else if (roleStr == 'worker' || roleStr.contains('worker')) {
             workers++;
           }
-
-          if (statusStr.contains('pending') || statusStr == 'pending') {
-            pending++;
-          }
         }
+      }
 
-        for (final u in AuthService().registeredUsers) {
-          if (!seenUserIds.contains(u.userId)) {
+      for (final u in AuthService().registeredUsers) {
+        if (!seenUserIds.contains(u.userId)) {
+          if (u.status == UserStatus.pending) {
+            pending++;
+          } else if (u.status != UserStatus.suspended) {
             if (u.role == UserRole.supervisor) supervisors++;
             if (u.role == UserRole.worker) workers++;
-            if (u.status == UserStatus.pending) pending++;
           }
         }
-
-        yield AdminDashboardStats(
-          totalWards: realWardsCount,
-          totalSupervisors: supervisors,
-          totalWorkers: workers,
-          pendingRegistrations: pending,
-        );
       }
-    } catch (e) {
-      debugPrint('Firestore stream error in admin stats: $e');
-      yield getFallbackStats();
+
+      int finalWards = latestWardsCount;
+      if (finalWards == 0 && _inMemoryWards.isNotEmpty) {
+        finalWards = _inMemoryWards.length;
+      }
+      if (finalWards == 0 && isFirebaseAvailable) {
+        finalWards = defaultHospitalWards.length;
+      }
+
+      controller.add(AdminDashboardStats(
+        totalWards: finalWards,
+        totalSupervisors: supervisors,
+        totalWorkers: workers,
+        pendingRegistrations: pending,
+      ));
     }
+
+    // Initial check on both collections & auto-seed if empty
+    Future.microtask(() async {
+      try {
+        final wSnap = await _wardsCollection.get();
+        if (wSnap.docs.isNotEmpty) {
+          latestWardsCount = wSnap.docs.length;
+          if (wSnap.docs.any((d) =>
+              (d.data()['name'] ?? '').toString().contains('Ward') ||
+              d.data().containsKey('wardName') ||
+              d.data().containsKey('id'))) {
+            await seedInitialWardsToFirestore(overwrite: true);
+          }
+        } else {
+          // If empty, auto-seed default hospital wards to Cloud Firestore
+          await seedInitialWardsToFirestore();
+          final reSnap = await _wardsCollection.get();
+          if (reSnap.docs.isNotEmpty) {
+            latestWardsCount = reSnap.docs.length;
+          } else {
+            final wAltSnap = await firestore.collection('Wards').get();
+            if (wAltSnap.docs.isNotEmpty) {
+              latestWardsCount = wAltSnap.docs.length;
+            }
+          }
+        }
+        recalculateAndEmit();
+      } catch (e) {
+        debugPrint('Wards initial check error: $e');
+        await seedInitialWardsToFirestore();
+        try {
+          final reSnap = await _wardsCollection.get();
+          if (reSnap.docs.isNotEmpty) {
+            latestWardsCount = reSnap.docs.length;
+          }
+        } catch (_) {}
+        recalculateAndEmit();
+      }
+    });
+
+    usersSub = _usersCollection.snapshots().listen(
+      (snap) {
+        latestUsers = snap.docs;
+        recalculateAndEmit();
+      },
+      onError: (e) {
+        debugPrint('Users snapshot error in admin stats: $e');
+        if (!controller.isClosed) {
+          controller.add(calculateFallbackStats());
+        }
+      },
+    );
+
+    wardsSub = _wardsCollection.snapshots().listen(
+      (snap) {
+        if (snap.docs.isNotEmpty) {
+          latestWardsCount = snap.docs.length;
+          recalculateAndEmit();
+        } else {
+          firestore.collection('Wards').get().then((wAlt) {
+            if (wAlt.docs.isNotEmpty) {
+              latestWardsCount = wAlt.docs.length;
+            }
+            recalculateAndEmit();
+          }).catchError((_) {
+            recalculateAndEmit();
+          });
+        }
+      },
+      onError: (e) {
+        debugPrint('Wards snapshot error in admin stats: $e');
+      },
+    );
+
+    controller.onCancel = () {
+      usersSub?.cancel();
+      wardsSub?.cancel();
+    };
+
+    return controller.stream;
   }
 }
 
