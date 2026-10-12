@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'ward_model.dart';
 
 enum UserRole {
   admin,
@@ -108,6 +109,7 @@ class UserModel {
   final UserRole role;
   final DocumentReference? wardRef;
   final String? wardId;
+  final String? wardName;
   final UserStatus status;
   final String? activeAssignmentId;
   final DateTime createdAt;
@@ -120,6 +122,7 @@ class UserModel {
     required this.role,
     this.wardRef,
     this.wardId,
+    this.wardName,
     this.status = UserStatus.pending,
     this.activeAssignmentId,
     DateTime? createdAt,
@@ -136,6 +139,7 @@ class UserModel {
       'role': role.displayName,
       'wardRef': wardRef,
       'wardId': wardId,
+      'wardName': wardName ?? (wardId != null && wardId!.isNotEmpty ? formatWardDisplayName(wardId!) : null),
       'status': status.displayName,
       'activeAssignmentId': activeAssignmentId,
       'createdAt': createdAt.toIso8601String(),
@@ -148,6 +152,12 @@ class UserModel {
         (map['displayName'] as String?)?.trim() ??
         '';
 
+    final rawWardName = map['wardName'] as String?;
+    final rawWardId = map['wardId'] as String?;
+    final resolvedWardName = (rawWardName != null && rawWardName.trim().isNotEmpty)
+        ? formatWardDisplayName(rawWardName)
+        : (rawWardId != null && rawWardId.trim().isNotEmpty ? formatWardDisplayName(rawWardId) : null);
+
     return UserModel(
       userId: id,
       name: extractedName,
@@ -155,7 +165,8 @@ class UserModel {
       email: map['email'] ?? '',
       role: UserRole.fromString(map['role']),
       wardRef: map['wardRef'] is DocumentReference ? map['wardRef'] as DocumentReference : null,
-      wardId: map['wardId'],
+      wardId: rawWardId,
+      wardName: resolvedWardName,
       status: UserStatus.fromString(map['status']),
       activeAssignmentId: map['activeAssignmentId'],
       createdAt: _parseDateTime(map['createdAt']),
@@ -170,6 +181,7 @@ class UserModel {
     UserRole? role,
     DocumentReference? wardRef,
     String? wardId,
+    String? wardName,
     UserStatus? status,
     String? activeAssignmentId,
     DateTime? createdAt,
@@ -182,6 +194,7 @@ class UserModel {
       role: role ?? this.role,
       wardRef: wardRef ?? this.wardRef,
       wardId: wardId ?? this.wardId,
+      wardName: wardName ?? this.wardName,
       status: status ?? this.status,
       activeAssignmentId: activeAssignmentId ?? this.activeAssignmentId,
       createdAt: createdAt ?? this.createdAt,
