@@ -60,24 +60,24 @@ void main() {
       final now = DateTime(2026, 10, 7, 10, 0);
       final ward = WardModel(
         wardId: 'ward-01',
-        name: 'ICU Ward',
+        name: 'ICU',
         supervisorId: 'sup-123',
         createdAt: now,
       );
 
       final json = ward.toJson();
       expect(json['wardId'], 'ward-01');
-      expect(json['name'], 'ICU Ward');
+      expect(json['name'], 'ICU');
       expect(json['supervisorId'], 'sup-123');
 
       final fromMap = WardModel.fromMap(json, 'ward-01');
       expect(fromMap.wardId, 'ward-01');
-      expect(fromMap.name, 'ICU Ward');
+      expect(fromMap.name, 'ICU');
       expect(fromMap.supervisorId, 'sup-123');
 
-      final updated = ward.copyWith(name: 'Emergency Ward');
+      final updated = ward.copyWith(name: 'Emergency');
       expect(updated.wardId, 'ward-01');
-      expect(updated.name, 'Emergency Ward');
+      expect(updated.name, 'Emergency');
     });
   });
 

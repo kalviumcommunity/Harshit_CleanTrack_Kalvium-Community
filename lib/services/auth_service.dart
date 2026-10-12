@@ -57,6 +57,33 @@ class AuthService {
     _userPasswords.clear();
   }
 
+  void updateUser(UserModel user) {
+    final idx = _registeredUsers.indexWhere((u) => u.userId == user.userId);
+    if (idx != -1) {
+      _registeredUsers[idx] = user;
+    } else {
+      _registeredUsers.add(user);
+    }
+  }
+
+  void removeUser(String userId, {String? employeeId, String? email}) {
+    _registeredUsers.removeWhere((u) {
+      if (u.userId == userId) return true;
+      if (employeeId != null &&
+          employeeId.isNotEmpty &&
+          u.employeeId.trim().toLowerCase() == employeeId.trim().toLowerCase()) {
+        return true;
+      }
+      if (email != null &&
+          email.isNotEmpty &&
+          u.email.trim().toLowerCase() == email.trim().toLowerCase()) {
+        return true;
+      }
+      return false;
+    });
+    _userPasswords.remove(userId);
+  }
+
   bool get isFirebaseAvailable {
     try {
       return Firebase.apps.isNotEmpty;
