@@ -340,15 +340,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               onTap: () async {
                                 final service = widget.firestoreService ?? FirestoreService();
                                 await service.seedInitialWardsToFirestore(overwrite: true);
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Hospital wards synchronized with database.'),
-                                      backgroundColor: Color(0xFF16A34A),
-                                      duration: Duration(seconds: 2),
-                                    ),
-                                  );
-                                }
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Hospital wards synchronized with database.'),
+                                    backgroundColor: Color(0xFF16A34A),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
                               },
                               borderRadius: BorderRadius.circular(12),
                               child: const Padding(
