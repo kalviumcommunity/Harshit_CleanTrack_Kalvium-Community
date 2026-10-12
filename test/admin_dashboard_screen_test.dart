@@ -47,7 +47,7 @@ void main() {
     expect(find.text('CleanTrack Admin'), findsOneWidget);
     expect(find.text('HOUSEKEEPING MANAGEMENT'), findsOneWidget);
     expect(find.byIcon(Icons.notifications_none_rounded), findsOneWidget);
-    expect(find.text('R'), findsOneWidget); // First initial from Rajesh Kumar
+    expect(find.text('RK'), findsOneWidget); // Initials from Rajesh Kumar
 
     // 2. Dashboard Title (without Live badge)
     expect(find.text('Admin Dashboard'), findsWidgets);

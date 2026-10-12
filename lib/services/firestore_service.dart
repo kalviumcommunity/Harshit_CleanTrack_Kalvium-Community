@@ -877,7 +877,7 @@ class FirestoreService {
       attempts: 1,
       deadline: deadline,
       assignedAt: now,
-      status: AssignmentStatus.pendingVerification,
+      status: AssignmentStatus.pending,
     );
 
     seedTask(task);
@@ -960,6 +960,97 @@ class FirestoreService {
     return true;
   }
 
+  /// Automatically marks an unverified assignment as Auto Verified after 1 hour (PRD 6.5 & V03 & AC10)
+  Future<bool> autoVerifyTaskAssignment({
+    required String assignmentId,
+    required String taskId,
+    required String workerId,
+  }) async {
+    final now = DateTime.now();
+
+    final aIdx = _inMemoryAssignments.indexWhere((a) => a.assignmentId == assignmentId);
+    if (aIdx != -1) {
+      _inMemoryAssignments[aIdx] = _inMemoryAssignments[aIdx].copyWith(
+        status: AssignmentStatus.autoVerified,
+        verifiedAt: now,
+      );
+    }
+
+    final tIdx = _inMemoryTasks.indexWhere((t) => t.taskId == taskId);
+    if (tIdx != -1) {
+      _inMemoryTasks[tIdx] = _inMemoryTasks[tIdx].copyWith(
+        status: TaskStatus.closed,
+      );
+    }
+
+    final uIdx = _inMemoryUsers.indexWhere((u) => u.userId == workerId);
+    if (uIdx != -1) {
+      _inMemoryUsers[uIdx] = _inMemoryUsers[uIdx].copyWith(
+        status: UserStatus.available,
+        activeAssignmentId: null,
+      );
+    }
+
+    if (isFirebaseAvailable) {
+      try {
+        await _taskAssignmentsCollection.doc(assignmentId).update({
+          'status': AssignmentStatus.autoVerified.displayName,
+          'verifiedAt': now.toIso8601String(),
+        });
+        await _tasksCollection.doc(taskId).update({
+          'status': TaskStatus.closed.displayName,
+        });
+        await _usersCollection.doc(workerId).update({
+          'status': UserStatus.available.displayName,
+          'activeAssignmentId': null,
+        });
+        return true;
+      } catch (e) {
+        debugPrint('Error auto-verifying task assignment in Firestore: $e');
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Checks and transitions assignments unverified for >1 hour to Auto Verified (PRD 6.5 & V03)
+  Future<void> checkAndAutoVerifyAssignments() async {
+    final threshold = DateTime.now().subtract(const Duration(hours: 1));
+
+    for (int i = 0; i < _inMemoryAssignments.length; i++) {
+      final a = _inMemoryAssignments[i];
+      if (a.status == AssignmentStatus.pendingVerification &&
+          a.completedAt != null &&
+          a.completedAt!.isBefore(threshold)) {
+        await autoVerifyTaskAssignment(
+          assignmentId: a.assignmentId,
+          taskId: a.taskId,
+          workerId: a.workerId,
+        );
+      }
+    }
+
+    if (isFirebaseAvailable) {
+      try {
+        final snap = await _taskAssignmentsCollection
+            .where('status', isEqualTo: AssignmentStatus.pendingVerification.displayName)
+            .get();
+        for (final doc in snap.docs) {
+          final assignment = TaskAssignmentModel.fromMap(doc.data(), doc.id);
+          if (assignment.completedAt != null && assignment.completedAt!.isBefore(threshold)) {
+            await autoVerifyTaskAssignment(
+              assignmentId: assignment.assignmentId,
+              taskId: assignment.taskId,
+              workerId: assignment.workerId,
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('Note during auto-verify scan: $e');
+      }
+    }
+  }
+
   /// Reassigns task to the same worker with mandatory feedback in Firestore (PRD 6.6 & S04 & AC11)
   Future<TaskAssignmentModel?> reassignToSameWorker({
     required String assignmentId,
@@ -1016,7 +1107,7 @@ class FirestoreService {
       supervisorFeedback: feedback.trim(),
       deadline: newDeadline,
       assignedAt: now,
-      status: AssignmentStatus.pendingVerification,
+      status: AssignmentStatus.pending,
     );
 
     seedAssignment(newAssignment);
@@ -1093,7 +1184,7 @@ class FirestoreService {
       supervisorFeedback: null,
       deadline: newDeadline,
       assignedAt: now,
-      status: AssignmentStatus.pendingVerification,
+      status: AssignmentStatus.pending,
     );
 
     seedAssignment(newAssignment);
@@ -1310,7 +1401,91 @@ class FirestoreService {
 
     return controller.stream;
   }
+
+  // ==================== WORKER TASK OPERATIONS ====================
+
+  /// Retrieves the active task assignment for a given worker from Firestore or in-memory
+  Future<TaskAssignmentModel?> getActiveAssignmentForWorker(String workerId) async {
+    // First check in-memory assignments (for tests and offline mode)
+    final inMemoryMatch = _inMemoryAssignments.where((a) =>
+        a.workerId == workerId &&
+        a.status != AssignmentStatus.verified &&
+        a.status != AssignmentStatus.autoVerified);
+    if (inMemoryMatch.isNotEmpty) {
+      return inMemoryMatch.last;
+    }
+
+    if (!isFirebaseAvailable) return null;
+
+    try {
+      final query = await _taskAssignmentsCollection
+          .where('workerId', isEqualTo: workerId)
+          .get();
+
+      if (query.docs.isNotEmpty) {
+        final assignments = query.docs
+            .map((doc) => TaskAssignmentModel.fromMap(doc.data(), doc.id))
+            .where((a) =>
+                a.status != AssignmentStatus.verified &&
+                a.status != AssignmentStatus.autoVerified)
+            .toList();
+        if (assignments.isNotEmpty) {
+          return assignments.last;
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error getting active assignment for worker from Firestore: $e');
+      return null;
+    }
+  }
+
+  /// Marks an assignment as completed / pending verification by the worker (PRD 6.4 & C01)
+  Future<bool> markAssignmentCompleted(String assignmentId) async {
+    final now = DateTime.now();
+    final aIdx = _inMemoryAssignments.indexWhere((a) => a.assignmentId == assignmentId);
+    if (aIdx != -1) {
+      _inMemoryAssignments[aIdx] = _inMemoryAssignments[aIdx].copyWith(
+        status: AssignmentStatus.pendingVerification,
+        completedAt: now,
+      );
+    }
+
+    if (isFirebaseAvailable) {
+      try {
+        await _taskAssignmentsCollection.doc(assignmentId).update({
+          'status': AssignmentStatus.pendingVerification.displayName,
+          'completedAt': now.toIso8601String(),
+        });
+        return true;
+      } catch (e) {
+        debugPrint('Error marking assignment completed in Firestore: $e');
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Fetches a task document by ID from Firestore or in-memory
+  Future<TaskModel?> getTask(String taskId) async {
+    final inMem = _inMemoryTasks.where((t) => t.taskId == taskId);
+    if (inMem.isNotEmpty) return inMem.first;
+
+    if (!isFirebaseAvailable) return null;
+
+    try {
+      final doc = await _tasksCollection.doc(taskId).get();
+      if (doc.exists && doc.data() != null) {
+        return TaskModel.fromMap(doc.data()!, doc.id);
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error getting task from Firestore: $e');
+      return null;
+    }
+  }
 }
+
 
 /// Snapshot model for Admin Dashboard workforce overview
 class AdminDashboardStats {

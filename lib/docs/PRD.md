@@ -36,14 +36,14 @@ Inaccurate Compliance Tracking: Compiling monthly compliance reports requires ma
 Quantified Impact
 Baseline measurements are required before these impacts can be quantified. The following metrics will be collected during the baseline measurement period:
 Efficiency Loss: Supervisors spend up to 25% of shift time manually assigning tasks and locating available workers. (Baseline note: To be measured during 2-week pre-pilot observation period)
-Verification Delays: Approximately 15% of completed cleaning tasks remain unverified for over 24 hours due to lack of automated alerts. (Baseline note: To be measured during 2-week pre-pilot observation period)
+Verification Delays: Approximately 15% of completed cleaning tasks remain unverified for over 1 hour due to lack of automated alerts. (Baseline note: To be measured during 2-week pre-pilot observation period)
 Audit Failure Rate: An estimated 10% of reassigned or failed tasks are omitted from monthly compliance records owing to missing history. (Baseline note: To be measured during 2-week pre-pilot observation period)
 Reporting Overhead: Compiling ward compliance reports manually requires 8 hours per ward every month. (Baseline note: To be measured during 2-week pre-pilot observation period)
 Business Impact
 Unstructured housekeeping management compromises hospital hygiene standards and increases operational risk. Potential business impacts requiring stakeholder validation include delayed bed turnover, lower patient satisfaction scores, and heightened infection risk in critical wards. Furthermore, without accurate assignment records, administrators face challenges evaluating worker productivity, managing suspensions fairly, and substantiating compliance or operational records during hospital accreditation audits.
 Success Criteria
 During the defined MVP pilot measurement period approved by stakeholders across target wards:
-Verification Timeliness: ≥90% of completed tasks verified (or auto-verified) within 24 hours during the 30-day MVP pilot timeline.
+Verification Timeliness: ≥90% of completed tasks verified (or auto-verified) within 1 hour during the 30-day MVP pilot timeline.
 Task Allocation Rule: 100% adherence to single active task assignment per worker throughout the 30-day MVP pilot timeline.
 Ward Governance: 100% successful supervisor and worker ward assignments prior to pilot launch.
 Reporting Coverage: Monthly compliance reports generated and available for 100% of target wards within 2 business days of month-end.
@@ -230,9 +230,9 @@ Requirement
 V01
 Supervisors verify completed assignments.
 V02
-Supervisors have 24 hours to verify.
+Supervisors have 1 hour to verify.
 V03
-Unverified assignments automatically become Auto Verified after 24 hours.
+Unverified assignments automatically become Auto Verified after 1 hour.
 
 
 6.6 Reassignment
@@ -369,8 +369,8 @@ Metric Name
 Measurement Method
 Numeric Target
 Timeline
-Tasks verified within 24 hours
-(Verified tasks ≤24h ÷ Total completed tasks) × 100
+Tasks verified within 1 hour
+(Verified tasks ≤1h ÷ Total completed tasks) × 100
 ≥90%
 30-Day MVP Pilot
 Single active task compliance
@@ -711,7 +711,7 @@ High
 Implement supervisor override to pause/cancel current active task
 Product Manager
 RISK-05
-Auto-verification at 24 hours lowers quality accountability
+Auto-verification at 1 hour lowers quality accountability
 Medium
 Medium
 Flag auto-verified tasks separately on Admin compliance dashboard
@@ -815,7 +815,7 @@ E05
 Three attempts exceeded
 Assignment becomes Not Completed and worker is suspended
 E06
-Supervisor takes no action for 24 hours
+Supervisor takes no action for 1 hour
 Assignment becomes Auto Verified
 E07
 Task reassigned to same worker
@@ -851,7 +851,7 @@ Completed assignments enter Pending Verification.
 AC09
 Supervisors can verify assignments.
 AC10
-Auto Verification occurs after 24 hours.
+Auto Verification occurs after 1 hour.
 AC11
 Same-worker reassignment creates a new assignment with feedback.
 AC12

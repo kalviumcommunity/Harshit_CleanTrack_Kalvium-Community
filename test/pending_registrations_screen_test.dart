@@ -39,7 +39,7 @@ void main() {
     expect(find.byType(BackButton), findsOneWidget);
     expect(find.byKey(const Key('awaitingActivationBackButton')), findsOneWidget);
     expect(find.byKey(const Key('awaitingActivationNotificationButton')), findsOneWidget);
-    expect(find.text('R'), findsOneWidget);
+    expect(find.text('RK'), findsOneWidget);
   });
 
   testWidgets('Renders role toggle pills for Supervisor and Worker with initial Supervisor selected', (WidgetTester tester) async {
