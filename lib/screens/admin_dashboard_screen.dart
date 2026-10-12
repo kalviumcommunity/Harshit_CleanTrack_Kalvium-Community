@@ -25,29 +25,66 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   late Stream<AdminDashboardStats> _statsStream;
+  UserModel? _loadedUser;
 
   @override
   void initState() {
     super.initState();
+    _loadedUser = widget.user;
+    _resolveCurrentUser();
     _initStatsStream();
   }
 
   void _initStatsStream() {
     final service = widget.firestoreService ?? FirestoreService();
+    service.seedInitialWardsToFirestore(overwrite: service.isFirebaseAvailable);
     _statsStream = service.streamAdminDashboardStats();
   }
 
+  Future<void> _resolveCurrentUser() async {
+    if (_loadedUser != null && _loadedUser!.name.trim().isNotEmpty) return;
+
+    if (AuthService().isFirebaseAvailable) {
+      final fbUser = AuthService().auth.currentUser;
+      if (fbUser != null) {
+        final profile = await FirestoreService().getUserProfile(fbUser.uid);
+        if (mounted && profile != null) {
+          setState(() {
+            _loadedUser = profile;
+          });
+          return;
+        }
+      }
+    }
+
+    final adminInMem = AuthService().registeredUsers.where((u) => u.role == UserRole.admin);
+    if (adminInMem.isNotEmpty && mounted) {
+      setState(() {
+        _loadedUser = adminInMem.first;
+      });
+    }
+  }
 
   String _getUserInitials() {
-    final user = widget.user;
-    if (user == null || user.name.trim().isEmpty) return 'RK';
-    final parts = user.name.trim().split(RegExp(r'\s+'));
-    if (parts.length >= 2) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    } else if (parts.isNotEmpty && parts[0].isNotEmpty) {
-      return parts[0].substring(0, parts[0].length >= 2 ? 2 : 1).toUpperCase();
+    final user = _loadedUser ?? widget.user;
+    if (user != null && user.name.trim().isNotEmpty) {
+      return user.name.trim().substring(0, 1).toUpperCase();
     }
-    return 'RK';
+    if (AuthService().isFirebaseAvailable) {
+      final fbName = AuthService().auth.currentUser?.displayName;
+      if (fbName != null && fbName.trim().isNotEmpty) {
+        return fbName.trim().substring(0, 1).toUpperCase();
+      }
+      final email = AuthService().auth.currentUser?.email;
+      if (email != null && email.trim().isNotEmpty) {
+        return email.trim().substring(0, 1).toUpperCase();
+      }
+    }
+    final adminInMem = AuthService().registeredUsers.where((u) => u.role == UserRole.admin);
+    if (adminInMem.isNotEmpty && adminInMem.first.name.trim().isNotEmpty) {
+      return adminInMem.first.name.trim().substring(0, 1).toUpperCase();
+    }
+    return 'A';
   }
 
   String _getCurrentMonthPerformance() {
@@ -90,8 +127,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
+  bool _hasSyncedWards = false;
+
   @override
   Widget build(BuildContext context) {
+    if (!_hasSyncedWards && widget.firestoreService == null && AuthService().isFirebaseAvailable) {
+      _hasSyncedWards = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        FirestoreService().seedInitialWardsToFirestore(overwrite: true);
+      });
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: PreferredSize(
@@ -167,14 +213,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              widget.user?.name ?? 'Admin User',
+                              (_loadedUser ?? widget.user)?.name ?? 'Admin User',
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: Color(0xFF0F172A),
                               ),
                             ),
                             Text(
-                              widget.user?.email ?? 'admin@cleantrack.org',
+                              (_loadedUser ?? widget.user)?.email ?? 'admin@cleantrack.org',
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: Color(0xFF64748B),
@@ -277,14 +323,44 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'WORKFORCE SNAPSHOT',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.6,
-                            color: Color(0xFF64748B),
-                          ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'WORKFORCE SNAPSHOT',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.6,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                            InkWell(
+                              key: const Key('syncSnapshotButton'),
+                              onTap: () async {
+                                final service = widget.firestoreService ?? FirestoreService();
+                                await service.seedInitialWardsToFirestore(overwrite: true);
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Hospital wards synchronized with database.'),
+                                      backgroundColor: Color(0xFF16A34A),
+                                      duration: Duration(seconds: 2),
+                                    ),
+                                  );
+                                }
+                              },
+                              borderRadius: BorderRadius.circular(12),
+                              child: const Padding(
+                                padding: EdgeInsets.all(4.0),
+                                child: Icon(
+                                  Icons.refresh_rounded,
+                                  size: 16,
+                                  color: Color(0xFF64748B),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 16),
                         Row(
@@ -349,7 +425,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => const PendingRegistrationsScreen(),
+                        builder: (_) => PendingRegistrationsScreen(adminUser: widget.user),
                       ),
                     ),
                   ),
