@@ -49,7 +49,7 @@ class _WorkerDashboardScreenState extends State<WorkerDashboardScreen> {
             ? AuthService().auth.currentUser?.uid ?? ''
             : '');
 
-    if (workerId.isNotEmpty && _loadedUser == null) {
+    if (workerId.isNotEmpty) {
       final profile = await _firestoreService.getUserProfile(workerId);
       if (mounted && profile != null) {
         setState(() {
@@ -67,17 +67,6 @@ class _WorkerDashboardScreenState extends State<WorkerDashboardScreen> {
     // Load ward name if wardId exists
     if (currentUser.wardId != null && currentUser.wardId!.isNotEmpty) {
       await _loadWardName(currentUser.wardId!);
-    }
-
-    // Check if worker status is Available with no active assignment
-    if (currentUser.status == UserStatus.available &&
-        currentUser.activeAssignmentId == null) {
-      if (mounted) {
-        setState(() {
-          _hasActiveTask = false;
-        });
-      }
-      return;
     }
 
     // Attempt to load from Firestore/in-memory if user ID exists
@@ -1199,12 +1188,15 @@ class _WorkerDashboardScreenState extends State<WorkerDashboardScreen> {
               borderRadius: BorderRadius.circular(28),
             ),
           ),
-          onPressed: () {
-            _loadWorkerTaskData();
+          onPressed: () async {
+            await _loadWorkerTaskData();
+            if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Checking for new ward tasks...'),
-                duration: Duration(seconds: 2),
+              SnackBar(
+                content: Text(_hasActiveTask
+                    ? 'New task loaded: $_taskTitle'
+                    : 'Checking completed. No new tasks assigned.'),
+                duration: const Duration(seconds: 2),
                 behavior: SnackBarBehavior.floating,
               ),
             );

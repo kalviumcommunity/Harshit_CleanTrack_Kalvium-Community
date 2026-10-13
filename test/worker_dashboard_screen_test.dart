@@ -186,5 +186,64 @@ void main() {
       expect(find.text('Worker Notifications'), findsOneWidget);
       expect(find.text('Verification Window'), findsOneWidget);
     });
+
+    testWidgets('Tapping CHECK FOR NEW TASKS loads freshly assigned task dynamically',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final firestoreService = FirestoreService();
+      final availableWorker = UserModel(
+        userId: 'wrk-101',
+        name: 'Ramesh Kumar',
+        employeeId: 'WRK-101',
+        email: 'ramesh@hospital.org',
+        role: UserRole.worker,
+        wardId: 'ICU',
+        status: UserStatus.available,
+        activeAssignmentId: null,
+      );
+
+      await tester.pumpWidget(buildDashboard(
+        user: availableWorker,
+        firestoreService: firestoreService,
+      ));
+      await tester.pumpAndSettle();
+
+      // Initially in idle state
+      expect(find.text('No Tasks Assigned'), findsOneWidget);
+      expect(find.text('CHECK FOR NEW TASKS'), findsOneWidget);
+
+      // Supervisor assigns a new task while worker is on this screen
+      firestoreService.seedTask(TaskModel(
+        taskId: 'task-new',
+        wardId: 'ICU',
+        title: 'Emergency Disinfection',
+        description: 'Complete ward disinfection',
+        createdAt: DateTime.now(),
+      ));
+      firestoreService.seedAssignment(TaskAssignmentModel(
+        assignmentId: 'assign-new',
+        taskId: 'task-new',
+        workerId: 'wrk-101',
+        wardId: 'ICU',
+        assignmentNumber: 1,
+        attempts: 1,
+        deadline: DateTime(2026, 10, 13, 14, 0),
+        assignedAt: DateTime.now(),
+        status: AssignmentStatus.pending,
+      ));
+
+      // Worker clicks CHECK FOR NEW TASKS
+      await tester.tap(find.text('CHECK FOR NEW TASKS'));
+      await tester.pumpAndSettle();
+
+      // New task should now be loaded dynamically!
+      expect(find.text('No Tasks Assigned'), findsNothing);
+      expect(find.text('Emergency Disinfection'), findsOneWidget);
+      expect(find.text('New task loaded: Emergency Disinfection'), findsOneWidget);
+    });
   });
 }
