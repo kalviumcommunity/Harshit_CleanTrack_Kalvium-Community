@@ -1,7 +1,17 @@
 import 'package:flutter/material.dart';
 
+import '../models/user_model.dart';
+import '../models/ward_model.dart';
+
 class SupervisorAssignTaskScreen extends StatelessWidget {
-  const SupervisorAssignTaskScreen({super.key});
+  final UserModel? selectedWorker;
+  final WardModel? ward;
+
+  const SupervisorAssignTaskScreen({
+    super.key,
+    this.selectedWorker,
+    this.ward,
+  });
 
   @override
   Widget build(BuildContext context) {

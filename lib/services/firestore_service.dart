@@ -877,7 +877,7 @@ class FirestoreService {
       attempts: 1,
       deadline: deadline,
       assignedAt: now,
-      status: AssignmentStatus.pending,
+      status: AssignmentStatus.pendingVerification,
     );
 
     seedTask(task);
@@ -1107,7 +1107,7 @@ class FirestoreService {
       supervisorFeedback: feedback.trim(),
       deadline: newDeadline,
       assignedAt: now,
-      status: AssignmentStatus.pending,
+      status: AssignmentStatus.pendingVerification,
     );
 
     seedAssignment(newAssignment);
@@ -1184,7 +1184,7 @@ class FirestoreService {
       supervisorFeedback: null,
       deadline: newDeadline,
       assignedAt: now,
-      status: AssignmentStatus.pending,
+      status: AssignmentStatus.pendingVerification,
     );
 
     seedAssignment(newAssignment);

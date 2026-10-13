@@ -4,6 +4,7 @@ import '../models/ward_model.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/user_avatar.dart';
 import 'login_screen.dart';
 import 'supervisor_worker_list_screen.dart';
 import 'supervisor_assign_task_screen.dart';
@@ -119,15 +120,7 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
   }
 
   String _getUserInitials() {
-    final name = _getEffectiveUserName();
-    if (name.isEmpty) return 'S';
-    final parts = name.trim().split(RegExp(r'\s+'));
-    if (parts.length >= 2) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    } else if (parts.isNotEmpty && parts[0].isNotEmpty) {
-      return parts[0][0].toUpperCase();
-    }
-    return 'S';
+    return getUserInitials(_getEffectiveUserName());
   }
 
   Future<void> _handleLogout() async {
@@ -637,7 +630,11 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => const SupervisorWorkerListScreen(),
+                                builder: (_) => SupervisorWorkerListScreen(
+                                  user: _currentUser,
+                                  ward: _ward,
+                                  firestoreService: _firestoreService,
+                                ),
                               ),
                             );
                           },

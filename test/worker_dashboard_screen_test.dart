@@ -41,7 +41,7 @@ void main() {
         attempts: 1,
         deadline: DateTime(2026, 10, 12, 10, 30),
         assignedAt: DateTime.now(),
-        status: AssignmentStatus.pending,
+        status: AssignmentStatus.completed,
       ));
 
       final worker = UserModel(
@@ -69,7 +69,7 @@ void main() {
 
       // Task Card details matching screenshot (Ward box removed as it is shown in profile card)
       expect(find.text('WARD: ICU'), findsNothing);
-      expect(find.text('Pending'), findsOneWidget);
+      expect(find.text('Completed'), findsOneWidget);
       expect(find.text('ICU Floor Cleaning'), findsOneWidget);
       expect(find.text('TARGET DEADLINE'), findsOneWidget);
       expect(find.text('10:30 AM'), findsOneWidget);
@@ -145,7 +145,7 @@ void main() {
         attempts: 1,
         deadline: DateTime(2026, 10, 12, 10, 30),
         assignedAt: DateTime.now(),
-        status: AssignmentStatus.pending,
+        status: AssignmentStatus.completed,
       ));
 
       final worker = UserModel(
@@ -233,7 +233,7 @@ void main() {
         attempts: 1,
         deadline: DateTime(2026, 10, 13, 14, 0),
         assignedAt: DateTime.now(),
-        status: AssignmentStatus.pending,
+        status: AssignmentStatus.completed,
       ));
 
       // Worker clicks CHECK FOR NEW TASKS
