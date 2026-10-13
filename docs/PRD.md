@@ -8,7 +8,7 @@ CleanTrack
 Version
 1.1
 Status
-Final
+Draft
 Date
 September 26, 2026
 Team
@@ -21,22 +21,22 @@ Admin
 
 1. Product Overview
 CleanTrack is a hospital housekeeping management system that digitizes task assignment, verification, and workforce allocation across hospital wards.
-Instead of relying on verbal instructions, supervisors assign cleaning tasks digitally to workers within their ward. Workers complete assigned tasks, supervisors verify the work, and administrators oversee ward allocation, suspensions, and compliance reporting.
+Instead of relying on verbal instructions, supervisors assign tasks digitally to workers within their ward. Workers complete assigned tasks, supervisors verify the work, and administrators oversee ward allocation, suspensions, and compliance reporting.
 The system maintains a complete history of every task assignment—even when a task is reassigned to another worker—allowing accurate monthly compliance reporting and workforce accountability.
 
 2. Problem Statement
 Current Situation
-Ward supervisors/managers are responsible for assigning, tracking, and verifying hospital housekeeping tasks across their wards, but currently rely heavily on ad-hoc, manual coordination methods such as verbal instructions, paper logs, and informal messaging. Supervisors distribute cleaning tasks manually to housekeeping staff/workers without a central system to track worker availability or real-time task status. As a result, cleaning activities are loosely monitored, and task verification depends on irregular physical walkthroughs.
+Ward supervisors/managers are responsible for assigning, tracking, and verifying hospital housekeeping tasks across their wards, but currently rely heavily on ad-hoc, manual coordination methods such as verbal instructions, paper logs, and informal messaging. Supervisors distribute tasks manually to housekeeping staff/workers without a central system to track worker availability or real-time task status. As a result, activities are loosely monitored, and task verification depends on irregular physical walkthroughs.
 Key Pain Points
 Manual & Verbal Task Assignments: Lack of a centralized digital log leads to miscommunication, missed tasks, and unassigned ward areas.
-No Structured Verification Process: Supervisors lack standard, timed verification workflows, causing delay in feedback and inconsistent cleaning quality.
+No Structured Verification Process: Supervisors lack standard, timed verification workflows, causing delay in feedback and inconsistent task quality.
 Invisibility of Workforce Availability: Supervisors cannot easily determine which workers are idle or overloaded, leading to inefficient task distribution.
 Loss of Reassignment History & Accountability: When tasks are reassigned or incomplete, previous assignment attempts are overwritten, eliminating audit trails for performance issues.
 Inaccurate Compliance Tracking: Compiling monthly compliance reports requires manual consolidation, leading to delayed reporting and data errors across wards.
 Quantified Impact
 Baseline measurements are required before these impacts can be quantified. The following metrics will be collected during the baseline measurement period:
 Efficiency Loss: Supervisors spend up to 25% of shift time manually assigning tasks and locating available workers. (Baseline note: To be measured during 2-week pre-pilot observation period)
-Verification Delays: Approximately 15% of completed cleaning tasks remain unverified for over 1 hour due to lack of automated alerts. (Baseline note: To be measured during 2-week pre-pilot observation period)
+Verification Delays: Approximately 15% of completed tasks remain unverified for over 1 hour due to lack of automated alerts. (Baseline note: To be measured during 2-week pre-pilot observation period)
 Audit Failure Rate: An estimated 10% of reassigned or failed tasks are omitted from monthly compliance records owing to missing history. (Baseline note: To be measured during 2-week pre-pilot observation period)
 Reporting Overhead: Compiling ward compliance reports manually requires 8 hours per ward every month. (Baseline note: To be measured during 2-week pre-pilot observation period)
 Business Impact
@@ -72,6 +72,7 @@ Needs
 Assign supervisors to wards.
 Assign workers to wards.
 View pending registrations.
+Reject invalid or spam registrations to remove them immediately from the database.
 Monitor suspended workers.
 Track compliance across wards.
 
@@ -91,7 +92,7 @@ Needs
 Receive assigned work.
 View task instructions.
 Complete tasks.
-Receive supervisor feedback when work is reassigned.
+Receive task updates when work is reassigned.
 Business Rule: Each worker belongs to one ward.
 
 5. User Stories
@@ -102,14 +103,14 @@ ID
 Title
 User Story
 A01
-Assign Ward
-As an admin, I want to assign registered users to wards, so that the hospital workforce structure remains organized and operational.
+Assign Ward / Reject User
+As an admin, I want to approve and permanently assign registered users to wards or reject invalid/spam registrations (deleting them immediately), so that the workforce assignment remains fixed, clean, organized, and secure.
 A02
 View Suspensions
 As an admin, I want to monitor suspended workers, so that I can oversee workforce availability and handle account reinstatements.
 A03
 View Compliance
-As an admin, I want monthly ward-wise compliance reports, so that I can monitor overall hospital cleaning performance and standards.
+As an admin, I want monthly ward-wise compliance reports, so that I can monitor overall hospital performance and standards.
 
 
 Supervisor Stories
@@ -122,13 +123,13 @@ Find Available Workers
 As a supervisor, I want to see workers without active tasks, so that I can assign work efficiently without overloading staff.
 S02
 Assign Task
-As a supervisor, I want to assign cleaning tasks to workers, so that housekeeping work begins immediately and wards stay clean.
+As a supervisor, I want to assign tasks to workers, so that housekeeping work begins immediately and wards stay clean.
 S03
 Verify Work
 As a supervisor, I want to verify completed work, so that finished tasks meet hospital hygiene standards.
 S04
 Reassign Same Worker
-As a supervisor, I want to resend a task with feedback, so that the worker can correct mistakes and complete the job properly.
+As a supervisor, I want to resend a task to the same worker, so that the worker can correct mistakes and complete the job properly.
 S05
 Reassign Another Worker
 As a supervisor, I want to assign the same task to another available worker when the previous worker fails, so that the task can be completed without unnecessary delay.
@@ -144,10 +145,10 @@ Receive Task
 As a worker, I want to receive a clear task with instructions, so that I understand what work I need to complete and how it should be performed.
 W02
 Complete Task
-As a worker, I want to mark my assigned work as completed, so that my supervisor can review and verify the completed task.
+As a worker, I want to mark my pending assignment as completed, so that my supervisor can review and verify the completed task.
 W03
 Receive Feedback
-As a worker, I want to receive supervisor feedback when my task is reassigned, so that I understand what needs to be corrected before completing the task again.
+As a worker, I want to be notified when my task is reassigned, so that I understand what needs to be redone to complete the task.
 W04
 Suspension Notice
 As a worker whose account has been suspended, I want to know why I cannot access the application, so that I understand the reason for the suspension and know whom to contact for assistance.
@@ -164,7 +165,7 @@ Supervisors must be able to register.
 R02
 Workers must be able to register.
 R03
-New registrations remain in Pending until assigned by Admin.
+New registrations remain in Pending until approved and assigned to a ward or rejected (which permanently deletes the record) by Admin.
 R04
 Employee IDs must follow the defined format.
 
@@ -183,9 +184,9 @@ WRK-001
 ID
 Requirement
 W01
-Admin assigns one supervisor to one ward.
+Admin assigns one supervisor to one ward permanently (ward assignments cannot be changed once assigned).
 W02
-Admin assigns multiple workers to a ward.
+Admin assigns multiple workers to a ward permanently (ward assignments cannot be changed once assigned).
 W03
 Workers belong to only one ward.
 W04
@@ -241,7 +242,7 @@ A supervisor has two reassignment options.
 Reassign to the Same Worker
 When the same worker receives the task again:
 Original task description remains visible.
-The supervisor must provide mandatory feedback.
+No feedback is provided during reassignment.
 A new Task Assignment record is created.
 Reassign to Another Worker
 If the assigned worker fails:
@@ -271,8 +272,9 @@ Missing a deadline immediately marks the assignment Not Completed.
 Three failed attempts immediately mark the assignment Not Completed.
 Suspended workers cannot access the application.
 Supervisors can immediately assign the same task to another available worker after failure.
-Same-worker reassignment always requires mandatory feedback.
+Same-worker reassignment does not require feedback.
 Every reassignment creates a new Task Assignment record.
+Once assigned to a ward by an Admin, ward assignments for supervisors and workers are permanent and cannot be changed.
 
 8. Status Definitions
 Worker Status
@@ -308,10 +310,11 @@ Task completed successfully
 
 
 Task Assignment Status
+
 Status
 Meaning
-Completed
-Worker finished work
+Pending
+Task is in progress
 Pending Verification
 Awaiting supervisor review
 Verified
@@ -325,7 +328,7 @@ Failed assignment
 9. Notification Requirements
 Worker
 New task assigned.
-Same task reassigned with supervisor feedback.
+Same task reassigned to the worker.
 Supervisor
 Completed task awaiting verification.
 Admin
@@ -425,9 +428,10 @@ Role Dashboard
 
 Worker Flow
 
+
 Worker Dashboard
       ↓
-View Current Assignment
+View Current Assignment (Pending)
       ↓
 Complete Assignment
       ↓
@@ -498,7 +502,7 @@ string
 Denormalized string ID of assigned ward for query filtering
 status
 string
-User status enum: "Pending" | "Available" | "Busy" | "Suspended" | "Assigned"
+User status enum: "Pending" | "Available" | "Busy" | "Suspended" | "Assigned" | "Rejected"
 activeAssignmentId
 string | null
 Document ID of current active assignment (null if available)
@@ -550,7 +554,7 @@ reference
 Pointer reference to assigning `users/{supervisorUserId}`
 title
 string
-Title of the cleaning task
+Title of the task
 description
 string
 Detailed task instructions
@@ -568,6 +572,7 @@ Document ID of latest assignment attempt document
 13.4 `taskAssignments` Collection ( Path: `taskAssignments/{assignmentId}` )  
 
 Stored as a top-level collection (or subcollection under `tasks/{taskId}/assignments/{assignmentId}`). Every task assignment attempt creates an immutable document to preserve full historical tracking.
+
 
 
 Field Name
@@ -599,7 +604,7 @@ number
 Attempt sequence number for parent task (1, 2, 3...)
 supervisorFeedback
 string | null
-Mandatory feedback on same-worker reassignment
+Optional notes or legacy field (no feedback provided on reassignment)
 attempts
 number
 Total attempt count accumulated
@@ -617,7 +622,7 @@ timestamp | null
 Timestamp when supervisor or auto-verification approved
 status
 string
-Assignment status enum: "Completed" | "Pending Verification" | "Verified" | "Auto Verified" | "Not Completed"
+Assignment status enum: "Pending" | "Pending Verification" | "Verified" | "Auto Verified" | "Not Completed"
 
 
 13.5 Monthly Compliance Reporting Flow
@@ -696,7 +701,7 @@ RISK-02
 Workers shared across multiple wards during shift shortages
 High
 Medium
-Allow Admin temporary ward transfer permissions in MVP phase 2
+Maintain strict permanent ward assignments and address shortages via workload rebalancing rather than ward transfers
 Ward Operations Lead
 RISK-03
 Single supervisor per ward bottleneck during shift overlaps/absences
@@ -705,7 +710,7 @@ High
 Designate backup Admin override for urgent verification
 Hospital Admin
 RISK-04
-Single active task restriction delays emergency cleaning requests
+Single active task restriction delays emergency requests
 Medium
 High
 Implement supervisor override to pause/cancel current active task
@@ -777,21 +782,7 @@ Medium
 Establish standardized 2-week manual baseline logging prior to launch
 Analytics Lead
 
-
-Validation Checklist
-
-ID
-Validation Item
-Status
-VAL-01
-Confirm employee ID format compatibility with contract workers
-Pending Review
-VAL-02
-Validate offline sync reliability in basement ward locations
-In Progress
-VAL-03
-Obtain HR agreement on automated worker suspension rules
-Pending Approval
+E10
 
 
 16. Edge Cases
@@ -801,10 +792,10 @@ Edge Case
 Expected Behavior
 E01
 Worker registers
-Account remains Pending
+Account remains Pending until Admin assigns a ward or rejects/deletes the account.
 E02
 Supervisor registers
-Account remains Pending
+Account remains Pending until Admin assigns a ward or rejects/deletes the account.
 E03
 Worker has active assignment
 Cannot receive another assignment
@@ -819,13 +810,22 @@ Supervisor takes no action for 1 hour
 Assignment becomes Auto Verified
 E07
 Task reassigned to same worker
-New assignment with feedback
+New assignment created without feedback
 E08
 Task reassigned to another worker
 New assignment while previous history remains
 E09
+
+
 Suspended worker logs in
 Suspension screen appears
+
+E10
+Admin attempts to reassign or change ward for a supervisor or worker
+Action is blocked; ward assignments cannot be modified once set.
+
+
+
 
 
 17. Acceptance Criteria
@@ -834,8 +834,14 @@ ID
 Acceptance Criteria
 AC01
 Supervisors and workers can register successfully.
+
+AC01b
+Admin can reject pending registrations, resulting in immediate deletion of the account record from the database.
+
+
+
 AC02
-Admin can assign wards.
+Admin can assign wards permanently to supervisors and workers upon registration approval, but cannot change ward assignments once set.
 AC03
 One supervisor manages one ward.
 AC04
@@ -845,7 +851,7 @@ Workers receive only one active assignment.
 AC06
 Supervisors can create tasks with descriptions.
 AC07
-Workers can complete assignments.
+Workers can mark pending assignments as completed.
 AC08
 Completed assignments enter Pending Verification.
 AC09
@@ -853,7 +859,7 @@ Supervisors can verify assignments.
 AC10
 Auto Verification occurs after 1 hour.
 AC11
-Same-worker reassignment creates a new assignment with feedback.
+Same-worker reassignment creates a new assignment without feedback.
 AC12
 Another-worker reassignment creates a new assignment while preserving previous history.
 AC13
