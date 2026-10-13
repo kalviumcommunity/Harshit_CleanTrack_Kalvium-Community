@@ -58,7 +58,7 @@ void main() {
 
     // 1. App Bar Header
     expect(find.text('CleanTrack'), findsOneWidget);
-    expect(find.text('HOUSEKEEPING MANAGEMENT'), findsOneWidget);
+    expect(find.text('HOSPITAL HOUSEKEEPING MANAGEMENT'), findsOneWidget);
     expect(find.byIcon(Icons.notifications_none_rounded), findsOneWidget);
     expect(find.text('RK'), findsOneWidget);
 
@@ -66,8 +66,9 @@ void main() {
     expect(find.text('Supervisor Dashboard'), findsOneWidget);
     expect(find.text('Hospital workforce overview'), findsOneWidget);
 
-    // 3. Supervisor Info Card with Supervisor's Name
+    // 3. Supervisor Info Card with Supervisor's Name and ID
     expect(find.text('Rajesh Kumar'), findsOneWidget);
+    expect(find.text('ID: SUP-001'), findsOneWidget);
     expect(find.text('ICU Ward'), findsWidgets);
 
     // 4. 2x2 Grid of Stat Cards

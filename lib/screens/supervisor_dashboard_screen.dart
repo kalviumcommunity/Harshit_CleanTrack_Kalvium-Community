@@ -69,12 +69,12 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
     }
   }
 
+  UserModel? get _currentUser => _loadedUser ?? widget.user;
+
   String _getEffectiveUserName() {
-    if (_loadedUser != null && _loadedUser!.name.trim().isNotEmpty) {
-      return _loadedUser!.name.trim();
-    }
-    if (widget.user != null && widget.user!.name.trim().isNotEmpty) {
-      return widget.user!.name.trim();
+    final user = _currentUser;
+    if (user != null && user.name.trim().isNotEmpty) {
+      return user.name.trim();
     }
     if (AuthService().isFirebaseAvailable) {
       final authName = AuthService().auth.currentUser?.displayName;
@@ -94,11 +94,9 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
   }
 
   String _getEffectiveEmail() {
-    if (_loadedUser != null && _loadedUser!.email.trim().isNotEmpty) {
-      return _loadedUser!.email.trim();
-    }
-    if (widget.user != null && widget.user!.email.trim().isNotEmpty) {
-      return widget.user!.email.trim();
+    final user = _currentUser;
+    if (user != null && user.email.trim().isNotEmpty) {
+      return user.email.trim();
     }
     if (AuthService().isFirebaseAvailable) {
       final authEmail = AuthService().auth.currentUser?.email;
@@ -106,18 +104,30 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
         return authEmail.trim();
       }
     }
-    return 'supervisor@cleantrack.org';
+    return '';
+  }
+
+  String _getEffectiveEmployeeId() {
+    final user = _currentUser;
+    if (user != null && user.employeeId.trim().isNotEmpty) {
+      return user.employeeId.trim();
+    }
+    if (user != null && user.userId.trim().isNotEmpty) {
+      return user.userId.trim();
+    }
+    return '';
   }
 
   String _getUserInitials() {
     final name = _getEffectiveUserName();
+    if (name.isEmpty) return 'S';
     final parts = name.trim().split(RegExp(r'\s+'));
     if (parts.length >= 2) {
       return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
     } else if (parts.isNotEmpty && parts[0].isNotEmpty) {
-      return parts[0].substring(0, parts[0].length >= 2 ? 2 : 1).toUpperCase();
+      return parts[0][0].toUpperCase();
     }
-    return 'RK';
+    return 'S';
   }
 
   Future<void> _handleLogout() async {
@@ -241,6 +251,7 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
 
     final effectiveSupervisorName = _getEffectiveUserName();
     final effectiveSupervisorEmail = _getEffectiveEmail();
+    final effectiveSupervisorId = _getEffectiveEmployeeId();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -277,7 +288,7 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
                       ),
                       SizedBox(height: 2),
                       Text(
-                        'HOUSEKEEPING MANAGEMENT',
+                        'HOSPITAL HOUSEKEEPING MANAGEMENT',
                         style: TextStyle(
                           color: Color(0xFF64748B),
                           fontSize: 10,
@@ -400,24 +411,65 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Title & Subtitle
-                const Text(
-                  'Supervisor Dashboard',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF0F172A),
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Hospital workforce overview',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFF64748B),
-                    fontWeight: FontWeight.w400,
-                  ),
+                // Title & Subtitle with Live indicator pill
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: const [
+                        Text(
+                          'Supervisor Dashboard',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF0F172A),
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Hospital workforce overview',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Color(0xFF64748B),
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Live status indicator pill (matching admin dashboard)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF0F172A),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          const Text(
+                            'Live',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF475569),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 18),
 
@@ -467,10 +519,11 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              displayWardName,
+                              'ID: $effectiveSupervisorId',
                               style: const TextStyle(
                                 fontSize: 13,
                                 color: Color(0xFF64748B),
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
                           ],

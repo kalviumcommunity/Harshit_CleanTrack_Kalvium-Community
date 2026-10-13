@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum AssignmentStatus {
+  pending,
   completed,
   pendingVerification,
   verified,
@@ -9,6 +10,8 @@ enum AssignmentStatus {
 
   String get displayName {
     switch (this) {
+      case AssignmentStatus.pending:
+        return 'Pending';
       case AssignmentStatus.completed:
         return 'Completed';
       case AssignmentStatus.pendingVerification:
@@ -23,8 +26,10 @@ enum AssignmentStatus {
   }
 
   static AssignmentStatus fromString(String? status) {
-    if (status == null) return AssignmentStatus.pendingVerification;
+    if (status == null) return AssignmentStatus.pending;
     switch (status.toLowerCase()) {
+      case 'pending':
+        return AssignmentStatus.pending;
       case 'completed':
         return AssignmentStatus.completed;
       case 'pending verification':
@@ -39,7 +44,7 @@ enum AssignmentStatus {
       case 'not_completed':
         return AssignmentStatus.notCompleted;
       default:
-        return AssignmentStatus.pendingVerification;
+        return AssignmentStatus.pending;
     }
   }
 }
@@ -119,7 +124,7 @@ class TaskAssignmentModel {
       assignmentNumber: (map['assignmentNumber'] as num?)?.toInt() ?? 1,
       supervisorFeedback: map['supervisorFeedback'],
       attempts: (map['attempts'] as num?)?.toInt() ?? 1,
-      deadline: _parseDateTime(map['deadline'], DateTime.now().add(const Duration(hours: 24))),
+      deadline: _parseDateTime(map['deadline'], DateTime.now().add(const Duration(hours: 1))),
       assignedAt: _parseDateTime(map['assignedAt']),
       completedAt: map['completedAt'] != null ? _parseDateTime(map['completedAt']) : null,
       verifiedAt: map['verifiedAt'] != null ? _parseDateTime(map['verifiedAt']) : null,

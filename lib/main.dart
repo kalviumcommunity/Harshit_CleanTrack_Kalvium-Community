@@ -10,8 +10,13 @@ import 'firebase_options.dart';
 import 'services/firestore_service.dart';
 import 'services/ward_seed_service.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  _initFirebase();
+  runApp(const CleanTrackApp());
+}
+
+Future<void> _initFirebase() async {
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -21,7 +26,6 @@ void main() async {
   } catch (e) {
     debugPrint('Firebase initialization note: $e');
   }
-  runApp(const CleanTrackApp());
 }
 
 class CleanTrackApp extends StatelessWidget {

@@ -68,7 +68,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final user = result.user!;
       Widget destination;
 
-      // PRD Redirection Flow
+      // Role-based redirection
       if (user.role == UserRole.admin) {
         destination = AdminDashboardScreen(user: user);
       } else if (user.role == UserRole.supervisor) {

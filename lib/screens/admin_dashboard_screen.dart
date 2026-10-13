@@ -65,24 +65,42 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
 
-  String _getUserInitials() {
-    final user = _loadedUser ?? widget.user;
+  UserModel? get _currentUser => _loadedUser ?? widget.user;
+
+  String _getEffectiveUserName() {
+    final user = _currentUser;
     if (user != null && user.name.trim().isNotEmpty) {
-      return user.name.trim().substring(0, 1).toUpperCase();
+      return user.name.trim();
     }
     if (AuthService().isFirebaseAvailable) {
       final fbName = AuthService().auth.currentUser?.displayName;
       if (fbName != null && fbName.trim().isNotEmpty) {
-        return fbName.trim().substring(0, 1).toUpperCase();
+        return fbName.trim();
       }
       final email = AuthService().auth.currentUser?.email;
-      if (email != null && email.trim().isNotEmpty) {
-        return email.trim().substring(0, 1).toUpperCase();
+      if (email != null && email.contains('@')) {
+        final prefix = email.split('@').first;
+        final parts = prefix.replaceAll(RegExp(r'[._\d]'), ' ').trim().split(RegExp(r'\s+'));
+        if (parts.isNotEmpty && parts.first.isNotEmpty) {
+          return parts.map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '').join(' ');
+        }
       }
     }
     final adminInMem = AuthService().registeredUsers.where((u) => u.role == UserRole.admin);
     if (adminInMem.isNotEmpty && adminInMem.first.name.trim().isNotEmpty) {
-      return adminInMem.first.name.trim().substring(0, 1).toUpperCase();
+      return adminInMem.first.name.trim();
+    }
+    return 'Admin';
+  }
+
+  String _getUserInitials() {
+    final name = _getEffectiveUserName();
+    if (name.isEmpty) return 'A';
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.length >= 2) {
+      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    } else if (parts.isNotEmpty && parts[0].isNotEmpty) {
+      return parts[0][0].toUpperCase();
     }
     return 'A';
   }
