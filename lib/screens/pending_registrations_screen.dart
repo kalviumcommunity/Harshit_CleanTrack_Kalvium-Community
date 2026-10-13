@@ -58,10 +58,9 @@ class _PendingRegistrationsScreenState
       }
     }
 
-    final adminInMem = AuthService().registeredUsers.where((u) => u.role == UserRole.admin);
-    if (adminInMem.isNotEmpty && mounted) {
+    if (_currentUser == null && widget.adminUser != null) {
       setState(() {
-        _currentUser = adminInMem.first;
+        _currentUser = widget.adminUser;
       });
     }
   }
@@ -109,10 +108,6 @@ class _PendingRegistrationsScreenState
           return parts.map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '').join(' ');
         }
       }
-    }
-    final adminInMem = AuthService().registeredUsers.where((u) => u.role == UserRole.admin);
-    if (adminInMem.isNotEmpty && adminInMem.first.name.trim().isNotEmpty) {
-      return adminInMem.first.name.trim();
     }
     return 'Admin';
   }

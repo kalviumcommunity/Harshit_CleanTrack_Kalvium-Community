@@ -7,7 +7,6 @@ import '../models/ward_model.dart';
 import '../models/task_model.dart';
 import '../models/task_assignment_model.dart';
 import 'auth_service.dart';
-import 'ward_seed_service.dart';
 
 class SupervisorDashboardStats {
   final int availableWorkers;
@@ -72,6 +71,9 @@ class FirestoreService {
   }
 
   void seedWard(WardModel ward) {
+    if (_inMemoryWards.isEmpty) {
+      _inMemoryWards.addAll(defaultHospitalWards);
+    }
     _inMemoryWards.removeWhere((w) => w.wardId == ward.wardId);
     _inMemoryWards.add(ward);
   }
@@ -235,6 +237,9 @@ class FirestoreService {
   }
 
   /// Assigns a user to a ward (activating pending supervisor to Assigned or worker to Available)
+  /// Enforces:
+  /// 1. One Ward - One Supervisor (PRD AC03 / W01): Rejects if ward is already assigned to a supervisor.
+  /// 2. Worker assignment requirement: Rejects if ward does not have an assigned supervisor.
   Future<bool> assignUserToWard({
     required String userId,
     required String wardId,
@@ -246,7 +251,94 @@ class FirestoreService {
 
     final cleanWardName = formatWardDisplayName(wardId);
 
-    // 1. In-memory user update
+    // Find ward in memory
+    final inMemWardIdx = _inMemoryWards.indexWhere((w) => w.wardId == wardId || w.name == cleanWardName);
+    final inMemWard = inMemWardIdx != -1
+        ? _inMemoryWards[inMemWardIdx]
+        : defaultHospitalWards.firstWhere(
+            (w) => w.wardId == wardId || w.name == cleanWardName,
+            orElse: () => WardModel(wardId: wardId, name: cleanWardName),
+          );
+
+    // 1. In-memory validation: One ward - one supervisor
+    if (role == UserRole.supervisor) {
+      if (inMemWard.supervisorId != null &&
+          inMemWard.supervisorId!.trim().isNotEmpty &&
+          inMemWard.supervisorId != userId) {
+        debugPrint('[FirestoreService] Rejected: Ward $cleanWardName already assigned to supervisor ${inMemWard.supervisorId}');
+        return false;
+      }
+    }
+
+    // 2. In-memory validation: Worker requires an assigned supervisor
+    if (role == UserRole.worker) {
+      if (inMemWard.supervisorId == null || inMemWard.supervisorId!.trim().isEmpty) {
+        debugPrint('[FirestoreService] Rejected: Cannot assign worker because ward $cleanWardName does not have an assigned supervisor.');
+        return false;
+      }
+    }
+
+    // 3. Firestore persistence with atomic verification
+    if (isFirebaseAvailable) {
+      try {
+        final success = await firestore.runTransaction<bool>((transaction) async {
+          final wardDocRef = _wardsCollection.doc(wardId);
+          final userDocRef = _usersCollection.doc(userId);
+
+          final wardSnapshot = await transaction.get(wardDocRef);
+
+          if (role == UserRole.supervisor) {
+            if (wardSnapshot.exists && wardSnapshot.data() != null) {
+              final currentSup = (wardSnapshot.data()!['supervisorId'] as String?)?.trim();
+              if (currentSup != null && currentSup.isNotEmpty && currentSup != userId) {
+                debugPrint('[FirestoreService Transaction] Aborted: Ward $wardId already assigned to supervisor $currentSup');
+                return false;
+              }
+            }
+          } else if (role == UserRole.worker) {
+            if (!wardSnapshot.exists || wardSnapshot.data() == null) {
+              debugPrint('[FirestoreService Transaction] Aborted: Ward $wardId does not exist.');
+              return false;
+            }
+            final currentSup = (wardSnapshot.data()!['supervisorId'] as String?)?.trim();
+            if (currentSup == null || currentSup.isEmpty) {
+              debugPrint('[FirestoreService Transaction] Aborted: Ward $wardId has no supervisor.');
+              return false;
+            }
+          }
+
+          transaction.update(userDocRef, {
+            'wardId': wardId,
+            'wardName': cleanWardName,
+            'status': newStatus.displayName,
+            'wardRef': wardDocRef,
+          });
+
+          if (role == UserRole.supervisor) {
+            transaction.set(
+              wardDocRef,
+              {
+                'name': cleanWardName,
+                'supervisorId': userId,
+                'supervisorRef': userDocRef,
+              },
+              SetOptions(merge: true),
+            );
+          }
+
+          return true;
+        });
+
+        if (!success) {
+          return false;
+        }
+      } catch (e) {
+        debugPrint('Error assigning user to ward in Firestore transaction: $e');
+        return false;
+      }
+    }
+
+    // 4. Update in-memory user (isolated for tests)
     final idx = _inMemoryUsers.indexWhere((u) => u.userId == userId);
     if (idx != -1) {
       _inMemoryUsers[idx] = _inMemoryUsers[idx].copyWith(
@@ -254,151 +346,51 @@ class FirestoreService {
         wardName: cleanWardName,
         status: newStatus,
       );
-      AuthService().updateUser(_inMemoryUsers[idx]);
-    } else {
-      final authIdx = AuthService().registeredUsers.indexWhere((u) => u.userId == userId);
-      if (authIdx != -1) {
-        final updated = AuthService().registeredUsers[authIdx].copyWith(
-          wardId: wardId,
-          wardName: cleanWardName,
-          status: newStatus,
-        );
-        AuthService().updateUser(updated);
-        _inMemoryUsers.add(updated);
-      }
     }
 
-    // 2. In-memory ward update (if supervisor, link supervisor to ward)
+    // 5. Update in-memory ward
     if (role == UserRole.supervisor) {
-      final wardIdx = _inMemoryWards.indexWhere((w) => w.wardId == wardId || w.name == cleanWardName);
-      if (wardIdx != -1) {
-        _inMemoryWards[wardIdx] = _inMemoryWards[wardIdx].copyWith(
+      if (inMemWardIdx != -1) {
+        _inMemoryWards[inMemWardIdx] = _inMemoryWards[inMemWardIdx].copyWith(
           name: cleanWardName,
           supervisorId: userId,
         );
       } else {
-        final defWard = defaultHospitalWards.firstWhere(
-          (w) => w.wardId == wardId || w.name == cleanWardName,
-          orElse: () => WardModel(wardId: wardId, name: cleanWardName),
-        );
-        _inMemoryWards.add(defWard.copyWith(supervisorId: userId));
+        _inMemoryWards.add(inMemWard.copyWith(supervisorId: userId));
       }
     }
 
-    // 3. Firestore persistence
-    if (isFirebaseAvailable) {
-      try {
-        final userUpdate = <String, dynamic>{
-          'wardId': wardId,
-          'wardName': cleanWardName,
-          'status': newStatus.displayName,
-          'wardRef': _wardsCollection.doc(wardId),
-        };
-        await _usersCollection.doc(userId).update(userUpdate);
-
-        if (role == UserRole.supervisor) {
-          await _wardsCollection.doc(wardId).set({
-            'name': cleanWardName,
-            'supervisorId': userId,
-            'supervisorRef': _usersCollection.doc(userId),
-          }, SetOptions(merge: true));
-        }
-        return true;
-      } catch (e) {
-        debugPrint('Error assigning user to ward in Firestore: $e');
-        return false;
-      }
-    }
     return true;
   }
 
-  /// Streams pending users awaiting ward assignment / activation
+  /// Streams pending users awaiting ward assignment / activation directly from Firestore
   Stream<List<UserModel>> streamPendingUsers({UserRole? role}) {
     if (isFirebaseAvailable) {
       return _usersCollection.snapshots().map((snapshot) {
         final list = <UserModel>[];
-        final seenIds = <String>{};
-
         for (final doc in snapshot.docs) {
           final data = doc.data();
           final user = UserModel.fromMap(data, doc.id);
           if (user.status == UserStatus.pending) {
             if (role == null || user.role == role) {
               list.add(user);
-              seenIds.add(user.userId);
-              if (user.employeeId.isNotEmpty) {
-                seenIds.add(user.employeeId.toLowerCase());
-              }
-              if (user.email.isNotEmpty) {
-                seenIds.add(user.email.toLowerCase());
-              }
             }
           }
         }
-
-        for (final u in [..._inMemoryUsers, ...AuthService().registeredUsers]) {
-          final isSeen = seenIds.contains(u.userId) ||
-              (u.employeeId.isNotEmpty && seenIds.contains(u.employeeId.toLowerCase())) ||
-              (u.email.isNotEmpty && seenIds.contains(u.email.toLowerCase()));
-          if (!isSeen && u.status == UserStatus.pending) {
-            if (role == null || u.role == role) {
-              list.add(u);
-              seenIds.add(u.userId);
-            }
-          }
-        }
-
         return list;
       });
     }
 
-    final all = <UserModel>[..._inMemoryUsers, ...AuthService().registeredUsers];
-    final unique = <String, UserModel>{};
-    for (final u in all) {
-      if (u.status == UserStatus.pending) {
-        if (role == null || u.role == role) {
-          unique[u.userId] = u;
-        }
-      }
-    }
-    return Stream.value(unique.values.toList());
+    // Isolated fallback for offline widget tests
+    final list = _inMemoryUsers
+        .where((u) => u.status == UserStatus.pending && (role == null || u.role == role))
+        .toList();
+    return Stream.value(list);
   }
 
-  /// Seeds demo pending personnel when needed for demonstration/testing
+  /// Seeds demo pending personnel when needed (disabled: registrations originate from Register screen)
   void seedDemoPendingUsers() {
-    final demoUsers = [
-      UserModel(
-        userId: 'sup-012',
-        name: 'Neha Sharma',
-        employeeId: 'SUP-012',
-        email: 'neha.sharma@cleantrack.org',
-        role: UserRole.supervisor,
-        status: UserStatus.pending,
-      ),
-      UserModel(
-        userId: 'wrk-125',
-        name: 'Ravi Kumar',
-        employeeId: 'WRK-125',
-        email: 'ravi.kumar@cleantrack.org',
-        role: UserRole.worker,
-        status: UserStatus.pending,
-      ),
-      UserModel(
-        userId: 'wrk-128',
-        name: 'Vikram Patel',
-        employeeId: 'WRK-128',
-        email: 'vikram.patel@cleantrack.org',
-        role: UserRole.worker,
-        status: UserStatus.pending,
-      ),
-    ];
-
-    for (final user in demoUsers) {
-      if (!_inMemoryUsers.any((u) => u.employeeId == user.employeeId)) {
-        _inMemoryUsers.add(user);
-        AuthService().updateUser(user);
-      }
-    }
+    // No-op: hardcoded demo pending users removed per user requirement.
   }
 
   /// Permanently deletes/rejects a user registration from Firestore and memory
@@ -554,27 +546,38 @@ class FirestoreService {
   }
 
   /// Default hospital wards list (ICU 1, ICU 2, ICU 3, Minor OT, OT 1, OT 2)
-  static List<WardModel> get defaultHospitalWards => WardSeedService.defaultHospitalWards;
+  static List<WardModel> get defaultHospitalWards => [
+    WardModel(wardId: 'ward_icu_1', name: 'ICU 1'),
+    WardModel(wardId: 'ward_icu_2', name: 'ICU 2'),
+    WardModel(wardId: 'ward_icu_3', name: 'ICU 3'),
+    WardModel(wardId: 'ward_minor_ot', name: 'Minor OT'),
+    WardModel(wardId: 'ward_ot_1', name: 'OT 1'),
+    WardModel(wardId: 'ward_ot_2', name: 'OT 2'),
+  ];
 
   /// Seeds default hospital wards into Cloud Firestore if the wards collection is empty
   Future<bool> seedInitialWardsToFirestore({bool overwrite = false}) async {
-    if (!isFirebaseAvailable) {
-      if (overwrite) {
-        for (final ward in defaultHospitalWards) {
-          seedWard(ward);
-        }
+    if (overwrite) {
+      for (final ward in defaultHospitalWards) {
+        seedWard(ward);
       }
+    }
+
+    if (!isFirebaseAvailable) {
       return true;
     }
 
-    for (final ward in defaultHospitalWards) {
-      seedWard(ward);
+    try {
+      final batch = firestore.batch();
+      for (final ward in defaultHospitalWards) {
+        batch.set(_wardsCollection.doc(ward.wardId), ward.toJson(), SetOptions(merge: true));
+      }
+      await batch.commit();
+      return true;
+    } catch (e) {
+      debugPrint('Error seeding wards to Firestore: $e');
+      return false;
     }
-
-    return await WardSeedService.seedWards(
-      overwrite: overwrite,
-      firestoreInstance: firestore,
-    );
   }
 
   /// Creates a new ward in Firestore and in-memory (PRD W04)
@@ -676,6 +679,91 @@ class FirestoreService {
     return Stream.value(defaultHospitalWards);
   }
 
+  /// Gets worker counts grouped by ward ID and formatted ward name directly from Firestore
+  Future<Map<String, int>> getWorkerCountsByWard() async {
+    final counts = <String, int>{};
+    if (isFirebaseAvailable) {
+      try {
+        final query = await _usersCollection
+            .where('role', isEqualTo: 'Worker')
+            .get();
+        for (final doc in query.docs) {
+          final data = doc.data();
+          final wId = (data['wardId'] as String?)?.trim() ?? '';
+          final wName = (data['wardName'] as String?)?.trim() ?? '';
+          if (wId.isNotEmpty) {
+            counts[wId] = (counts[wId] ?? 0) + 1;
+          }
+          if (wName.isNotEmpty) {
+            counts[wName] = (counts[wName] ?? 0) + 1;
+          }
+        }
+        return counts;
+      } catch (e) {
+        debugPrint('Error getting worker counts by ward: $e');
+        return counts;
+      }
+    }
+
+    // Isolated fallback for offline widget tests
+    for (final u in _inMemoryUsers) {
+      if (u.role == UserRole.worker) {
+        if (u.wardId != null && u.wardId!.trim().isNotEmpty) {
+          counts[u.wardId!] = (counts[u.wardId!] ?? 0) + 1;
+        }
+        if (u.wardName != null && u.wardName!.trim().isNotEmpty) {
+          counts[u.wardName!] = (counts[u.wardName!] ?? 0) + 1;
+        }
+      }
+    }
+    return counts;
+  }
+
+  /// Gets supervisor names mapped by supervisor userId and wardId directly from Firestore
+  Future<Map<String, String>> getSupervisorNames() async {
+    final names = <String, String>{};
+    if (isFirebaseAvailable) {
+      try {
+        final query = await _usersCollection
+            .where('role', isEqualTo: 'Supervisor')
+            .get();
+        for (final doc in query.docs) {
+          final data = doc.data();
+          final name = (data['name'] as String?)?.trim() ?? '';
+          if (name.isNotEmpty) {
+            names[doc.id] = name;
+            final wId = (data['wardId'] as String?)?.trim() ?? '';
+            final wName = (data['wardName'] as String?)?.trim() ?? '';
+            if (wId.isNotEmpty) {
+              names[wId] = name;
+            }
+            if (wName.isNotEmpty) {
+              names[wName] = name;
+            }
+          }
+        }
+        return names;
+      } catch (e) {
+        debugPrint('Error getting supervisor names: $e');
+        return names;
+      }
+    }
+
+    // Isolated fallback for offline widget tests
+    for (final u in _inMemoryUsers) {
+      if (u.role == UserRole.supervisor && u.name.trim().isNotEmpty) {
+        names[u.userId] = u.name.trim();
+        if (u.wardId != null && u.wardId!.trim().isNotEmpty) {
+          names[u.wardId!] = u.name.trim();
+        }
+        if (u.wardName != null && u.wardName!.trim().isNotEmpty) {
+          names[u.wardName!] = u.name.trim();
+        }
+      }
+    }
+    return names;
+  }
+
   // ==================== WORKER OPERATIONS FOR SUPERVISOR ====================
 
   /// Gets all workers assigned to a specific ward from Firestore
@@ -692,9 +780,8 @@ class FirestoreService {
         return [];
       }
     }
-    final all = [...AuthService().registeredUsers, ..._inMemoryUsers];
     final unique = <String, UserModel>{};
-    for (final u in all) {
+    for (final u in _inMemoryUsers) {
       if (u.role == UserRole.worker && (wardId.isEmpty || u.wardId == wardId)) {
         unique[u.userId] = u;
       }
@@ -719,9 +806,8 @@ class FirestoreService {
         return snapshot.docs.map((doc) => UserModel.fromMap(doc.data(), doc.id)).toList();
       });
     }
-    final all = [...AuthService().registeredUsers, ..._inMemoryUsers];
     final unique = <String, UserModel>{};
-    for (final u in all) {
+    for (final u in _inMemoryUsers) {
       if (u.role == UserRole.worker && (wardId.isEmpty || u.wardId == wardId)) {
         unique[u.userId] = u;
       }
@@ -1230,10 +1316,9 @@ class FirestoreService {
   }
 
   /// Streams real-time workforce statistics for the Admin Dashboard from Firestore
-  /// Streams real-time workforce statistics for the Admin Dashboard from Firestore
   Stream<AdminDashboardStats> streamAdminDashboardStats() {
     AdminDashboardStats calculateFallbackStats() {
-      final inMemory = AuthService().registeredUsers;
+      final inMemory = _inMemoryUsers;
       int supervisors = 0;
       int workers = 0;
       int pending = 0;
@@ -1290,17 +1375,6 @@ class FirestoreService {
             supervisors++;
           } else if (roleStr == 'worker' || roleStr.contains('worker')) {
             workers++;
-          }
-        }
-      }
-
-      for (final u in AuthService().registeredUsers) {
-        if (!seenUserIds.contains(u.userId)) {
-          if (u.status == UserStatus.pending) {
-            pending++;
-          } else if (u.status != UserStatus.suspended) {
-            if (u.role == UserRole.supervisor) supervisors++;
-            if (u.role == UserRole.worker) workers++;
           }
         }
       }

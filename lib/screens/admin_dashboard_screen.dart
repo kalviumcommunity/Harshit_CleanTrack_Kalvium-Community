@@ -57,10 +57,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       }
     }
 
-    final adminInMem = AuthService().registeredUsers.where((u) => u.role == UserRole.admin);
-    if (adminInMem.isNotEmpty && mounted) {
+    if (_loadedUser == null && widget.user != null) {
       setState(() {
-        _loadedUser = adminInMem.first;
+        _loadedUser = widget.user;
       });
     }
   }
@@ -85,10 +84,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           return parts.map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '').join(' ');
         }
       }
-    }
-    final adminInMem = AuthService().registeredUsers.where((u) => u.role == UserRole.admin);
-    if (adminInMem.isNotEmpty && adminInMem.first.name.trim().isNotEmpty) {
-      return adminInMem.first.name.trim();
     }
     return 'Admin';
   }
