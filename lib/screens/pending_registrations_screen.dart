@@ -401,12 +401,11 @@ class _PendingRegistrationsScreenState
     if (success) {
       final refreshedWards = await _firestoreService.getWards();
       final refreshedCounts = await _firestoreService.getWorkerCountsByWard();
-      if (mounted) {
-        setState(() {
-          _availableWards = refreshedWards;
-          _workerCounts = refreshedCounts;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _availableWards = refreshedWards;
+        _workerCounts = refreshedCounts;
+      });
       final wardName = _getWardDisplayName(effectiveWardId);
       final roleTitle = user.role == UserRole.supervisor ? 'Supervisor' : 'Worker';
       ScaffoldMessenger.of(context).showSnackBar(
@@ -429,6 +428,7 @@ class _PendingRegistrationsScreenState
         ),
       );
     } else {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Failed to assign ward. Please try again.'),
