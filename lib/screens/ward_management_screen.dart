@@ -3,6 +3,7 @@ import '../models/user_model.dart';
 import '../models/ward_model.dart';
 import '../services/firestore_service.dart';
 import '../services/auth_service.dart';
+import '../widgets/user_avatar.dart';
 import 'admin_dashboard_screen.dart';
 import 'login_screen.dart';
 
@@ -104,18 +105,6 @@ class _WardManagementScreenState extends State<WardManagementScreen> {
       }
     }
     return 'Admin';
-  }
-
-  String _getUserInitials() {
-    final name = _getEffectiveUserName();
-    if (name.isEmpty) return 'A';
-    final parts = name.trim().split(RegExp(r'\s+'));
-    if (parts.length >= 2) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    } else if (parts.isNotEmpty && parts[0].isNotEmpty) {
-      return parts[0][0].toUpperCase();
-    }
-    return 'A';
   }
 
   void _handleLogout() async {
@@ -412,22 +401,14 @@ class _WardManagementScreenState extends State<WardManagementScreen> {
                 ),
               ];
             },
-            child: Container(
-              width: 38,
-              height: 38,
-              margin: const EdgeInsets.only(right: 16),
-              decoration: const BoxDecoration(
-                color: Color(0xFF0F172A),
-                shape: BoxShape.circle,
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                _getUserInitials(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                ),
+            child: Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: UserAvatar(
+                name: _getEffectiveUserName(),
+                size: 38,
+                backgroundColor: const Color(0xFF0F172A),
+                textColor: Colors.white,
+                fontSize: 13,
               ),
             ),
           ),
