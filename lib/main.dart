@@ -8,7 +8,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 
 import 'services/firestore_service.dart';
-import 'services/ward_seed_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,7 +20,6 @@ Future<void> _initFirebase() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-    await WardSeedService.seedWards();
     await FirestoreService().seedInitialWardsToFirestore();
   } catch (e) {
     debugPrint('Firebase initialization note: $e');

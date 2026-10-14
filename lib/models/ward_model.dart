@@ -25,6 +25,11 @@ String formatWardDisplayName(String input) {
   final wordsWithoutWard = clean.split(' ').where((w) => w.trim().toLowerCase() != 'ward').toList();
   clean = wordsWithoutWard.join(' ').trim();
 
+  // If after stripping 'ward', there is only 1 single letter (e.g. 'A', 'B'), format as 'Ward A', 'Ward B'
+  if (wordsWithoutWard.length == 1 && RegExp(r'^[a-zA-Z]$').hasMatch(wordsWithoutWard.first)) {
+    return 'Ward ${wordsWithoutWard.first.toUpperCase()}';
+  }
+
   // Format words dynamically: short acronyms/numbers stay uppercase, words are title-cased
   final formattedWords = clean.split(' ').map((word) {
     if (word.isEmpty) return '';

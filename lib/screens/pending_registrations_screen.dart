@@ -13,7 +13,7 @@ class PendingRegistrationsScreen extends StatefulWidget {
   const PendingRegistrationsScreen({
     super.key,
     this.adminUser,
-    this.seedInitialData = true,
+    this.seedInitialData = false,
   });
 
   @override
@@ -28,6 +28,7 @@ class _PendingRegistrationsScreenState
   UserRole _selectedRole = UserRole.supervisor;
   final Map<String, String> _selectedWards = {};
   List<WardModel> _availableWards = [];
+  Map<String, int> _workerCounts = {};
   bool _isLoadingWards = true;
   final Set<String> _processingUserIds = {};
   final Set<String> _removedUserIds = {};
@@ -57,29 +58,36 @@ class _PendingRegistrationsScreenState
       }
     }
 
-    final adminInMem = AuthService().registeredUsers.where((u) => u.role == UserRole.admin);
-    if (adminInMem.isNotEmpty && mounted) {
+    if (_currentUser == null && widget.adminUser != null) {
       setState(() {
-        _currentUser = adminInMem.first;
+        _currentUser = widget.adminUser;
       });
     }
   }
 
   Future<void> _initData() async {
-    if (widget.seedInitialData) {
-      final existingUsers = await _firestoreService.getUsersByStatus(UserStatus.pending);
-      if (existingUsers.isEmpty) {
-        _firestoreService.seedDemoPendingUsers();
-      }
-    }
-
     final wards = await _firestoreService.getWards();
+    final workerCounts = await _firestoreService.getWorkerCountsByWard();
     if (mounted) {
       setState(() {
         _availableWards = wards;
+        _workerCounts = workerCounts;
         _isLoadingWards = false;
       });
     }
+  }
+
+  Future<void> _refreshWorkerCounts() async {
+    final workerCounts = await _firestoreService.getWorkerCountsByWard();
+    if (mounted) {
+      setState(() {
+        _workerCounts = workerCounts;
+      });
+    }
+  }
+
+  int _getWorkerCount(WardModel ward) {
+    return _workerCounts[ward.wardId] ?? _workerCounts[ward.name] ?? 0;
   }
 
   String _getEffectiveUserName() {
@@ -100,10 +108,6 @@ class _PendingRegistrationsScreenState
           return parts.map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '').join(' ');
         }
       }
-    }
-    final adminInMem = AuthService().registeredUsers.where((u) => u.role == UserRole.admin);
-    if (adminInMem.isNotEmpty && adminInMem.first.name.trim().isNotEmpty) {
-      return adminInMem.first.name.trim();
     }
     return 'Admin';
   }
@@ -334,13 +338,29 @@ class _PendingRegistrationsScreenState
   }
 
   Future<void> _assignWard(UserModel user) async {
-    final effectiveWardId = _selectedWards[user.userId] ??
-        (_availableWards.isNotEmpty ? _availableWards.first.wardId : '');
+    final effectiveWardId = _selectedWards[user.userId] ?? '';
 
     if (effectiveWardId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please select a hospital ward first.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final targetWard = _availableWards.firstWhere(
+      (w) => w.wardId == effectiveWardId,
+      orElse: () => WardModel(wardId: '', name: ''),
+    );
+
+    if (user.role == UserRole.worker &&
+        (targetWard.supervisorId == null || targetWard.supervisorId!.trim().isEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot assign worker: this ward does not have an assigned supervisor yet.'),
+          backgroundColor: Color(0xFFEF4444),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -369,10 +389,23 @@ class _PendingRegistrationsScreenState
         if (user.email.isNotEmpty) {
           _removedUserIds.add(user.email.toLowerCase());
         }
+        if (user.role == UserRole.supervisor) {
+          final wardIdx = _availableWards.indexWhere((w) => w.wardId == effectiveWardId);
+          if (wardIdx != -1) {
+            _availableWards[wardIdx] = _availableWards[wardIdx].copyWith(supervisorId: user.userId);
+          }
+        }
       }
     });
 
     if (success) {
+      final refreshedWards = await _firestoreService.getWards();
+      final refreshedCounts = await _firestoreService.getWorkerCountsByWard();
+      if (!mounted) return;
+      setState(() {
+        _availableWards = refreshedWards;
+        _workerCounts = refreshedCounts;
+      });
       final wardName = _getWardDisplayName(effectiveWardId);
       final roleTitle = user.role == UserRole.supervisor ? 'Supervisor' : 'Worker';
       ScaffoldMessenger.of(context).showSnackBar(
@@ -395,6 +428,7 @@ class _PendingRegistrationsScreenState
         ),
       );
     } else {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Failed to assign ward. Please try again.'),
@@ -612,6 +646,9 @@ class _PendingRegistrationsScreenState
           setState(() {
             _selectedRole = role;
           });
+          if (role == UserRole.worker) {
+            _refreshWorkerCounts();
+          }
         }
       },
       child: AnimatedContainer(
@@ -649,8 +686,14 @@ class _PendingRegistrationsScreenState
   }
 
   Widget _buildUserCard(UserModel user) {
-    final effectiveWardId = _selectedWards[user.userId] ??
-        (_availableWards.isNotEmpty ? _availableWards.first.wardId : null);
+    final selectableWards = user.role == UserRole.supervisor
+        ? _availableWards.where((w) => w.supervisorId == null || w.supervisorId!.trim().isEmpty).toList()
+        : _availableWards.where((w) => w.supervisorId != null && w.supervisorId!.trim().isNotEmpty).toList();
+
+    String? effectiveWardId = _selectedWards[user.userId];
+    if (effectiveWardId != null && !selectableWards.any((w) => w.wardId == effectiveWardId)) {
+      effectiveWardId = null;
+    }
     final isProcessing = _processingUserIds.contains(user.userId);
 
     return Container(
@@ -738,36 +781,108 @@ class _PendingRegistrationsScreenState
                   color: Color(0xFF64748B),
                   size: 22,
                 ),
-                hint: const Text(
-                  'Select Ward',
-                  style: TextStyle(
+                hint: Text(
+                  selectableWards.isEmpty
+                      ? (user.role == UserRole.supervisor
+                          ? 'No unassigned wards'
+                          : 'No supervised wards')
+                      : 'Select Ward',
+                  style: const TextStyle(
                     fontSize: 14,
                     color: Color(0xFF94A3B8),
                   ),
                 ),
-                items: _availableWards.map((ward) {
+                items: selectableWards.map((ward) {
+                  final workerCount = _getWorkerCount(ward);
                   return DropdownMenuItem<String>(
                     value: ward.wardId,
-                    child: Text(
-                      ward.name,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: Color(0xFF0F172A),
-                      ),
-                    ),
+                    child: user.role == UserRole.worker
+                        ? Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  ward.name,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF0F172A),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEFF6FF),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.people_outline_rounded,
+                                      size: 13,
+                                      color: Color(0xFF1E3A8A),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '$workerCount ${workerCount == 1 ? 'Worker' : 'Workers'}',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF1E3A8A),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          )
+                        : Text(
+                            ward.name,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
                   );
                 }).toList(),
-                onChanged: (String? newWardId) {
-                  if (newWardId != null) {
-                    setState(() {
-                      _selectedWards[user.userId] = newWardId;
-                    });
-                  }
-                },
+                onChanged: selectableWards.isEmpty
+                    ? null
+                    : (String? newWardId) {
+                        if (newWardId != null) {
+                          setState(() {
+                            _selectedWards[user.userId] = newWardId;
+                          });
+                        }
+                      },
               ),
             ),
           ),
+          if (user.role == UserRole.supervisor && selectableWards.isEmpty) ...[
+            const SizedBox(height: 6),
+            const Text(
+              'No unassigned wards available. Create a new ward in Ward Management.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Color(0xFFEF4444),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+          if (user.role == UserRole.worker && selectableWards.isEmpty) ...[
+            const SizedBox(height: 6),
+            const Text(
+              'No wards have an assigned supervisor yet. Assign a supervisor to a ward first.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Color(0xFFEF4444),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
 
           // Action Buttons: REJECT & ASSIGN WARD
@@ -819,7 +934,7 @@ class _PendingRegistrationsScreenState
                   height: 48,
                   child: ElevatedButton(
                     key: Key('assignWardButton_${user.userId}'),
-                    onPressed: isProcessing ? null : () => _assignWard(user),
+                    onPressed: (isProcessing || effectiveWardId == null) ? null : () => _assignWard(user),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF0F172A),
                       foregroundColor: Colors.white,

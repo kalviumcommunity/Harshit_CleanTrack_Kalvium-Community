@@ -1,0 +1,24 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Hospital wards: Enforce one supervisor per ward (PRD AC03 / W01)
+    match /wards/{wardId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if 
+        // Allow updating ward properties if supervisor is not being reassigned to a different supervisor
+        !('supervisorId' in request.resource.data) ||
+        !('supervisorId' in resource.data) ||
+        resource.data.supervisorId == null ||
+        resource.data.supervisorId == '' ||
+        resource.data.supervisorId == request.resource.data.supervisorId;
+      allow delete: if true;
+    }
+
+    // Default rules for other collections
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

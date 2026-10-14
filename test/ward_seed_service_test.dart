@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:cleantrack/services/ward_seed_service.dart';
+import 'package:cleantrack/services/firestore_service.dart';
 
 void main() {
-  group('WardSeedService Tests', () {
+  group('Default Hospital Wards Tests', () {
     test('defaultHospitalWards contains 6 standard hospital wards', () {
-      final wards = WardSeedService.defaultHospitalWards;
+      final wards = FirestoreService.defaultHospitalWards;
       expect(wards.length, 6);
 
       final names = wards.map((w) => w.name).toList();
@@ -19,7 +19,7 @@ void main() {
     });
 
     test('All defaultHospitalWards have clean names without "Ward" suffix', () {
-      for (final ward in WardSeedService.defaultHospitalWards) {
+      for (final ward in FirestoreService.defaultHospitalWards) {
         expect(
           ward.name.toLowerCase().contains('ward'),
           isFalse,
@@ -34,7 +34,7 @@ void main() {
     });
 
     test('Ward IDs match standard hospital convention', () {
-      final wardIds = WardSeedService.defaultHospitalWards.map((w) => w.wardId).toList();
+      final wardIds = FirestoreService.defaultHospitalWards.map((w) => w.wardId).toList();
       expect(wardIds, [
         'ward_icu_1',
         'ward_icu_2',
