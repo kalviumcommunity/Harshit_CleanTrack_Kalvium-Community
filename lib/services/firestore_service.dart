@@ -804,10 +804,12 @@ class FirestoreService {
   Future<List<UserModel>> getWorkersByWard(String wardId) async {
     if (isFirebaseAvailable) {
       try {
-        final query = await _usersCollection
-            .where('role', isEqualTo: 'Worker')
-            .where('wardId', isEqualTo: wardId)
-            .get();
+        final query = wardId.isEmpty
+            ? await _usersCollection.where('role', isEqualTo: 'Worker').get()
+            : await _usersCollection
+                .where('role', isEqualTo: 'Worker')
+                .where('wardId', isEqualTo: wardId)
+                .get();
         return query.docs.map((doc) => UserModel.fromMap(doc.data(), doc.id)).toList();
       } catch (e) {
         debugPrint('Error fetching workers by ward from Firestore: $e');

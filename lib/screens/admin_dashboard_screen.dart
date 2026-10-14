@@ -176,7 +176,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: const [
                       Text(
-                        'CleanTrack Admin',
+                        'CleanTrack',
                         style: TextStyle(
                           color: Color(0xFF0F172A),
                           fontSize: 17,
@@ -185,7 +185,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       ),
                       SizedBox(height: 2),
                       Text(
-                        'HOUSEKEEPING MANAGEMENT',
+                        'HOSPITAL HOUSEKEEPING MANAGEMENT',
                         style: TextStyle(
                           color: Color(0xFF64748B),
                           fontSize: 10,
@@ -483,7 +483,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => const WorkerManagementScreen(),
+                        builder: (_) => WorkerManagementScreen(adminUser: _currentUser),
                       ),
                     ),
                   ),
