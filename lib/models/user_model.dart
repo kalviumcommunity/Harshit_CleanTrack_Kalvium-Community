@@ -184,6 +184,7 @@ class UserModel {
     String? wardName,
     UserStatus? status,
     String? activeAssignmentId,
+    bool clearActiveAssignment = false,
     DateTime? createdAt,
   }) {
     return UserModel(
@@ -196,7 +197,7 @@ class UserModel {
       wardId: wardId ?? this.wardId,
       wardName: wardName ?? this.wardName,
       status: status ?? this.status,
-      activeAssignmentId: activeAssignmentId ?? this.activeAssignmentId,
+      activeAssignmentId: clearActiveAssignment ? null : (activeAssignmentId ?? this.activeAssignmentId),
       createdAt: createdAt ?? this.createdAt,
     );
   }

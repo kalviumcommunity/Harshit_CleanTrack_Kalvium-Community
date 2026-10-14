@@ -63,11 +63,20 @@ class FirestoreService {
   final List<TaskModel> _inMemoryTasks = [];
   final List<TaskAssignmentModel> _inMemoryAssignments = [];
 
+  final StreamController<void> _inMemoryChangeNotifier = StreamController<void>.broadcast();
+
+  void _notifyInMemoryChange() {
+    if (!_inMemoryChangeNotifier.isClosed) {
+      _inMemoryChangeNotifier.add(null);
+    }
+  }
+
   void clearAllData() {
     _inMemoryUsers.clear();
     _inMemoryWards.clear();
     _inMemoryTasks.clear();
     _inMemoryAssignments.clear();
+    _notifyInMemoryChange();
   }
 
   void seedWard(WardModel ward) {
@@ -76,21 +85,25 @@ class FirestoreService {
     }
     _inMemoryWards.removeWhere((w) => w.wardId == ward.wardId);
     _inMemoryWards.add(ward);
+    _notifyInMemoryChange();
   }
 
   void seedWorker(UserModel worker) {
     _inMemoryUsers.removeWhere((u) => u.userId == worker.userId);
     _inMemoryUsers.add(worker);
+    _notifyInMemoryChange();
   }
 
   void seedTask(TaskModel task) {
     _inMemoryTasks.removeWhere((t) => t.taskId == task.taskId);
     _inMemoryTasks.add(task);
+    _notifyInMemoryChange();
   }
 
   void seedAssignment(TaskAssignmentModel assignment) {
     _inMemoryAssignments.removeWhere((a) => a.assignmentId == assignment.assignmentId);
     _inMemoryAssignments.add(assignment);
+    _notifyInMemoryChange();
   }
 
   // ==================== USER OPERATIONS ====================
@@ -99,6 +112,7 @@ class FirestoreService {
   Future<bool> saveUserProfile(UserModel user) async {
     _inMemoryUsers.removeWhere((u) => u.userId == user.userId);
     _inMemoryUsers.add(user);
+    _notifyInMemoryChange();
 
     if (isFirebaseAvailable) {
       try {
@@ -346,6 +360,24 @@ class FirestoreService {
         wardName: cleanWardName,
         status: newStatus,
       );
+    } else {
+      final regUsers = AuthService().registeredUsers.where((u) => u.userId == userId);
+      if (regUsers.isNotEmpty) {
+        _inMemoryUsers.add(regUsers.first.copyWith(
+          wardId: wardId,
+          wardName: cleanWardName,
+          status: newStatus,
+        ));
+      }
+    }
+
+    final regIdx = AuthService().registeredUsers.indexWhere((u) => u.userId == userId);
+    if (regIdx != -1) {
+      AuthService().updateUser(AuthService().registeredUsers[regIdx].copyWith(
+        wardId: wardId,
+        wardName: cleanWardName,
+        status: newStatus,
+      ));
     }
 
     // 5. Update in-memory ward
@@ -360,6 +392,7 @@ class FirestoreService {
       }
     }
 
+    _notifyInMemoryChange();
     return true;
   }
 
@@ -452,6 +485,7 @@ class FirestoreService {
           }
         } catch (_) {}
       }
+      _notifyInMemoryChange();
       return true;
     } catch (e) {
       debugPrint('deleteUser caught general error: $e');
@@ -806,13 +840,32 @@ class FirestoreService {
         return snapshot.docs.map((doc) => UserModel.fromMap(doc.data(), doc.id)).toList();
       });
     }
-    final unique = <String, UserModel>{};
-    for (final u in _inMemoryUsers) {
-      if (u.role == UserRole.worker && (wardId.isEmpty || u.wardId == wardId)) {
-        unique[u.userId] = u;
+
+    List<UserModel> getFiltered() {
+      final all = [...AuthService().registeredUsers, ..._inMemoryUsers];
+      final unique = <String, UserModel>{};
+      for (final u in all) {
+        if (u.role == UserRole.worker && (wardId.isEmpty || u.wardId == wardId)) {
+          unique[u.userId] = u;
+        }
       }
+      return unique.values.toList();
     }
-    return Stream.value(unique.values.toList());
+
+    late StreamController<List<UserModel>> controller;
+    StreamSubscription? sub;
+    controller = StreamController<List<UserModel>>(
+      onListen: () {
+        controller.add(getFiltered());
+        sub = _inMemoryChangeNotifier.stream.listen((_) {
+          if (!controller.isClosed) {
+            controller.add(getFiltered());
+          }
+        });
+      },
+      onCancel: () => sub?.cancel(),
+    );
+    return controller.stream;
   }
 
   // ==================== TASK & ASSIGNMENT OPERATIONS ====================
@@ -832,8 +885,25 @@ class FirestoreService {
         return snapshot.docs.map((doc) => TaskModel.fromMap(doc.data(), doc.id)).toList();
       });
     }
-    final filtered = _inMemoryTasks.where((t) => wardId.isEmpty || t.wardId == wardId).toList();
-    return Stream.value(filtered);
+
+    List<TaskModel> getFiltered() {
+      return _inMemoryTasks.where((t) => wardId.isEmpty || t.wardId == wardId).toList();
+    }
+
+    late StreamController<List<TaskModel>> controller;
+    StreamSubscription? sub;
+    controller = StreamController<List<TaskModel>>(
+      onListen: () {
+        controller.add(getFiltered());
+        sub = _inMemoryChangeNotifier.stream.listen((_) {
+          if (!controller.isClosed) {
+            controller.add(getFiltered());
+          }
+        });
+      },
+      onCancel: () => sub?.cancel(),
+    );
+    return controller.stream;
   }
 
   /// Streams task assignments for a specific ward from Firestore
@@ -851,31 +921,61 @@ class FirestoreService {
         return snapshot.docs.map((doc) => TaskAssignmentModel.fromMap(doc.data(), doc.id)).toList();
       });
     }
-    final filtered = _inMemoryAssignments.where((a) => wardId.isEmpty || a.wardId == wardId).toList();
-    return Stream.value(filtered);
+
+    List<TaskAssignmentModel> getFiltered() {
+      return _inMemoryAssignments.where((a) => wardId.isEmpty || a.wardId == wardId).toList();
+    }
+
+    late StreamController<List<TaskAssignmentModel>> controller;
+    StreamSubscription? sub;
+    controller = StreamController<List<TaskAssignmentModel>>(
+      onListen: () {
+        controller.add(getFiltered());
+        sub = _inMemoryChangeNotifier.stream.listen((_) {
+          if (!controller.isClosed) {
+            controller.add(getFiltered());
+          }
+        });
+      },
+      onCancel: () => sub?.cancel(),
+    );
+    return controller.stream;
   }
 
   /// Streams live Supervisor Dashboard statistics from Firestore
-  Stream<SupervisorDashboardStats> streamSupervisorStats(String wardId) async* {
-    SupervisorDashboardStats getCalculatedStats(List<UserModel> workers, List<TaskAssignmentModel> assignments, String wardName) {
-      int available = 0;
-      int busy = 0;
-      for (final w in workers) {
-        if (w.status == UserStatus.available) available++;
-        if (w.status == UserStatus.busy) busy++;
-      }
-
+  Stream<SupervisorDashboardStats> streamSupervisorStats(String wardId) {
+    SupervisorDashboardStats getCalculatedStats(
+      List<UserModel> workers,
+      List<TaskAssignmentModel> assignments,
+      String wardName,
+    ) {
       int pendingVerify = 0;
       int overdue = 0;
       final now = DateTime.now();
 
+      final pendingWorkerIds = <String>{};
       for (final a in assignments) {
         if (a.status == AssignmentStatus.pendingVerification) {
           pendingVerify++;
+          pendingWorkerIds.add(a.workerId);
         }
         if (a.status != AssignmentStatus.verified && a.status != AssignmentStatus.autoVerified) {
           if (a.deadline.isBefore(now)) {
             overdue++;
+          }
+        }
+      }
+
+      int available = 0;
+      int busy = 0;
+      for (final w in workers) {
+        if (w.status == UserStatus.available) {
+          available++;
+        } else if (w.status == UserStatus.busy) {
+          // If the worker has submitted their task and it is awaiting review,
+          // they are counted under Pending Verification rather than actively "On task"
+          if (!pendingWorkerIds.contains(w.userId)) {
+            busy++;
           }
         }
       }
@@ -889,46 +989,124 @@ class FirestoreService {
       );
     }
 
-    if (!isFirebaseAvailable) {
-      final workers = _inMemoryUsers.where((u) => u.role == UserRole.worker && (wardId.isEmpty || u.wardId == wardId)).toList();
-      final assignments = _inMemoryAssignments.where((a) => wardId.isEmpty || a.wardId == wardId).toList();
-      final ward = _inMemoryWards.where((w) => w.wardId == wardId);
-      final wardName = ward.isNotEmpty ? ward.first.name : (wardId.isNotEmpty ? wardId : 'ICU Ward');
-      yield getCalculatedStats(workers, assignments, wardName);
-      return;
-    }
+    late StreamController<SupervisorDashboardStats> controller;
+    StreamSubscription? workersSub;
+    StreamSubscription? assignmentsSub;
+    StreamSubscription? memorySub;
 
-    try {
-      await for (final workersSnap in (wardId.isNotEmpty
-          ? _usersCollection.where('role', isEqualTo: 'Worker').where('wardId', isEqualTo: wardId).snapshots()
-          : _usersCollection.where('role', isEqualTo: 'Worker').snapshots())) {
-        
-        final workers = workersSnap.docs.map((doc) => UserModel.fromMap(doc.data(), doc.id)).toList();
-        
-        List<TaskAssignmentModel> assignments = [];
-        try {
-          final aSnap = wardId.isNotEmpty
-              ? await _taskAssignmentsCollection.where('wardId', isEqualTo: wardId).get()
-              : await _taskAssignmentsCollection.get();
-          assignments = aSnap.docs.map((d) => TaskAssignmentModel.fromMap(d.data(), d.id)).toList();
-        } catch (_) {}
+    List<UserModel> latestWorkers = [];
+    List<TaskAssignmentModel> latestAssignments = [];
+    String wardName = wardId.isNotEmpty ? wardId : 'ICU Ward';
 
-        String wardName = wardId.isNotEmpty ? wardId : 'ICU Ward';
-        try {
-          if (wardId.isNotEmpty) {
-            final wDoc = await _wardsCollection.doc(wardId).get();
-            if (wDoc.exists && wDoc.data() != null) {
-              wardName = wDoc.data()!['name'] ?? wardId;
-            }
-          }
-        } catch (_) {}
-
-        yield getCalculatedStats(workers, assignments, wardName);
+    void updateStats() {
+      if (!controller.isClosed) {
+        controller.add(getCalculatedStats(latestWorkers, latestAssignments, wardName));
       }
-    } catch (e) {
-      debugPrint('Error streaming supervisor stats: $e');
-      yield const SupervisorDashboardStats();
     }
+
+    if (!isFirebaseAvailable) {
+      void loadInMemory() {
+        final all = [...AuthService().registeredUsers, ..._inMemoryUsers];
+        final unique = <String, UserModel>{};
+        for (final u in all) {
+          unique[u.userId] = u;
+        }
+        latestWorkers = unique.values
+            .where((u) =>
+                u.role == UserRole.worker &&
+                (wardId.isEmpty ||
+                    u.wardId == wardId ||
+                    u.wardName == wardId ||
+                    formatWardDisplayName(u.wardId ?? '') == formatWardDisplayName(wardId)))
+            .toList();
+        latestAssignments = _inMemoryAssignments
+            .where((a) =>
+                wardId.isEmpty ||
+                a.wardId == wardId ||
+                formatWardDisplayName(a.wardId) == formatWardDisplayName(wardId))
+            .toList();
+        final ward = _inMemoryWards.where((w) =>
+            w.wardId == wardId || formatWardDisplayName(w.name) == formatWardDisplayName(wardId));
+        wardName = ward.isNotEmpty ? ward.first.name : (wardId.isNotEmpty ? formatWardDisplayName(wardId) : 'ICU Ward');
+        updateStats();
+      }
+
+      controller = StreamController<SupervisorDashboardStats>(
+        onListen: () {
+          loadInMemory();
+          memorySub = _inMemoryChangeNotifier.stream.listen((_) {
+            loadInMemory();
+          });
+        },
+        onCancel: () {
+          memorySub?.cancel();
+        },
+      );
+      return controller.stream;
+    }
+
+    final workersStream = (wardId.isNotEmpty
+        ? _usersCollection.where('wardId', isEqualTo: wardId).snapshots()
+        : _usersCollection.snapshots());
+    final assignmentsStream = (wardId.isNotEmpty
+        ? _taskAssignmentsCollection.where('wardId', isEqualTo: wardId).snapshots()
+        : _taskAssignmentsCollection.snapshots());
+
+    controller = StreamController<SupervisorDashboardStats>(
+      onListen: () {
+        if (wardId.isNotEmpty) {
+          _wardsCollection.doc(wardId).get().then((wDoc) {
+            if (wDoc.exists && wDoc.data() != null) {
+              wardName = wDoc.data()!['name'] ?? wardName;
+              updateStats();
+            }
+          }).catchError((_) {});
+        }
+
+        workersSub = workersStream.listen((snap) {
+          final allDocs = snap.docs.map((d) => UserModel.fromMap(d.data(), d.id)).toList();
+          latestWorkers = allDocs.where((u) => u.role == UserRole.worker).toList();
+          updateStats();
+        }, onError: (e) {
+          if (!controller.isClosed) controller.addError(e);
+        });
+
+        assignmentsSub = assignmentsStream.listen((snap) {
+          latestAssignments = snap.docs.map((d) => TaskAssignmentModel.fromMap(d.data(), d.id)).toList();
+          updateStats();
+        }, onError: (e) {
+          if (!controller.isClosed) controller.addError(e);
+        });
+
+        memorySub = _inMemoryChangeNotifier.stream.listen((_) {
+          final allMem = [...AuthService().registeredUsers, ..._inMemoryUsers];
+          if (allMem.isNotEmpty) {
+            final uniqueMap = <String, UserModel>{};
+            for (final w in latestWorkers) {
+              uniqueMap[w.userId] = w;
+            }
+            for (final u in allMem) {
+              if (u.role == UserRole.worker &&
+                  (wardId.isEmpty ||
+                      u.wardId == wardId ||
+                      u.wardName == wardId ||
+                      formatWardDisplayName(u.wardId ?? '') == formatWardDisplayName(wardId))) {
+                uniqueMap[u.userId] = u;
+              }
+            }
+            latestWorkers = uniqueMap.values.toList();
+            updateStats();
+          }
+        });
+      },
+      onCancel: () {
+        workersSub?.cancel();
+        assignmentsSub?.cancel();
+        memorySub?.cancel();
+      },
+    );
+
+    return controller.stream;
   }
 
   /// Creates a new Task and its initial Task Assignment record in Firestore (PRD 6.3 & S02)
@@ -963,7 +1141,7 @@ class FirestoreService {
       attempts: 1,
       deadline: deadline,
       assignedAt: now,
-      status: AssignmentStatus.pendingVerification,
+      status: AssignmentStatus.pending,
     );
 
     seedTask(task);
@@ -994,6 +1172,7 @@ class FirestoreService {
   }
 
   /// Verifies a completed task assignment in Firestore (PRD 6.5 & S03 & AC09)
+  /// Marks assignment as Verified, sets parent task status to Closed, and frees worker to Available.
   Future<bool> verifyTaskAssignment({
     required String assignmentId,
     required String taskId,
@@ -1002,6 +1181,13 @@ class FirestoreService {
     final now = DateTime.now();
 
     final aIdx = _inMemoryAssignments.indexWhere((a) => a.assignmentId == assignmentId);
+    final effectiveTaskId = taskId.isNotEmpty
+        ? taskId
+        : (aIdx != -1 ? _inMemoryAssignments[aIdx].taskId : '');
+    final effectiveWorkerId = workerId.isNotEmpty
+        ? workerId
+        : (aIdx != -1 ? _inMemoryAssignments[aIdx].workerId : '');
+
     if (aIdx != -1) {
       _inMemoryAssignments[aIdx] = _inMemoryAssignments[aIdx].copyWith(
         status: AssignmentStatus.verified,
@@ -1009,20 +1195,22 @@ class FirestoreService {
       );
     }
 
-    final tIdx = _inMemoryTasks.indexWhere((t) => t.taskId == taskId);
+    final tIdx = _inMemoryTasks.indexWhere((t) => t.taskId == effectiveTaskId);
     if (tIdx != -1) {
       _inMemoryTasks[tIdx] = _inMemoryTasks[tIdx].copyWith(
         status: TaskStatus.closed,
       );
     }
 
-    final uIdx = _inMemoryUsers.indexWhere((u) => u.userId == workerId);
+    final uIdx = _inMemoryUsers.indexWhere((u) => u.userId == effectiveWorkerId);
     if (uIdx != -1) {
       _inMemoryUsers[uIdx] = _inMemoryUsers[uIdx].copyWith(
         status: UserStatus.available,
         activeAssignmentId: null,
+        clearActiveAssignment: true,
       );
     }
+    _notifyInMemoryChange();
 
     if (isFirebaseAvailable) {
       try {
@@ -1030,13 +1218,17 @@ class FirestoreService {
           'status': AssignmentStatus.verified.displayName,
           'verifiedAt': now.toIso8601String(),
         });
-        await _tasksCollection.doc(taskId).update({
-          'status': TaskStatus.closed.displayName,
-        });
-        await _usersCollection.doc(workerId).update({
-          'status': UserStatus.available.displayName,
-          'activeAssignmentId': null,
-        });
+        if (effectiveTaskId.isNotEmpty) {
+          await _tasksCollection.doc(effectiveTaskId).update({
+            'status': TaskStatus.closed.displayName,
+          });
+        }
+        if (effectiveWorkerId.isNotEmpty) {
+          await _usersCollection.doc(effectiveWorkerId).update({
+            'status': UserStatus.available.displayName,
+            'activeAssignmentId': null,
+          });
+        }
         return true;
       } catch (e) {
         debugPrint('Error verifying task assignment in Firestore: $e');
@@ -1047,6 +1239,7 @@ class FirestoreService {
   }
 
   /// Automatically marks an unverified assignment as Auto Verified after 1 hour (PRD 6.5 & V03 & AC10)
+  /// Marks assignment as Auto Verified, sets parent task status to Closed, and frees worker to Available.
   Future<bool> autoVerifyTaskAssignment({
     required String assignmentId,
     required String taskId,
@@ -1055,6 +1248,13 @@ class FirestoreService {
     final now = DateTime.now();
 
     final aIdx = _inMemoryAssignments.indexWhere((a) => a.assignmentId == assignmentId);
+    final effectiveTaskId = taskId.isNotEmpty
+        ? taskId
+        : (aIdx != -1 ? _inMemoryAssignments[aIdx].taskId : '');
+    final effectiveWorkerId = workerId.isNotEmpty
+        ? workerId
+        : (aIdx != -1 ? _inMemoryAssignments[aIdx].workerId : '');
+
     if (aIdx != -1) {
       _inMemoryAssignments[aIdx] = _inMemoryAssignments[aIdx].copyWith(
         status: AssignmentStatus.autoVerified,
@@ -1062,18 +1262,19 @@ class FirestoreService {
       );
     }
 
-    final tIdx = _inMemoryTasks.indexWhere((t) => t.taskId == taskId);
+    final tIdx = _inMemoryTasks.indexWhere((t) => t.taskId == effectiveTaskId);
     if (tIdx != -1) {
       _inMemoryTasks[tIdx] = _inMemoryTasks[tIdx].copyWith(
         status: TaskStatus.closed,
       );
     }
 
-    final uIdx = _inMemoryUsers.indexWhere((u) => u.userId == workerId);
+    final uIdx = _inMemoryUsers.indexWhere((u) => u.userId == effectiveWorkerId);
     if (uIdx != -1) {
       _inMemoryUsers[uIdx] = _inMemoryUsers[uIdx].copyWith(
         status: UserStatus.available,
         activeAssignmentId: null,
+        clearActiveAssignment: true,
       );
     }
 
@@ -1083,13 +1284,17 @@ class FirestoreService {
           'status': AssignmentStatus.autoVerified.displayName,
           'verifiedAt': now.toIso8601String(),
         });
-        await _tasksCollection.doc(taskId).update({
-          'status': TaskStatus.closed.displayName,
-        });
-        await _usersCollection.doc(workerId).update({
-          'status': UserStatus.available.displayName,
-          'activeAssignmentId': null,
-        });
+        if (effectiveTaskId.isNotEmpty) {
+          await _tasksCollection.doc(effectiveTaskId).update({
+            'status': TaskStatus.closed.displayName,
+          });
+        }
+        if (effectiveWorkerId.isNotEmpty) {
+          await _usersCollection.doc(effectiveWorkerId).update({
+            'status': UserStatus.available.displayName,
+            'activeAssignmentId': null,
+          });
+        }
         return true;
       } catch (e) {
         debugPrint('Error auto-verifying task assignment in Firestore: $e');
@@ -1098,6 +1303,13 @@ class FirestoreService {
     }
     return true;
   }
+
+
+  /// Read-only view of in-memory tasks for test inspection
+  List<TaskModel> get inMemoryTasks => List.unmodifiable(_inMemoryTasks);
+
+  /// Read-only view of in-memory task assignments for test inspection
+  List<TaskAssignmentModel> get inMemoryAssignments => List.unmodifiable(_inMemoryAssignments);
 
   /// Checks and transitions assignments unverified for >1 hour to Auto Verified (PRD 6.5 & V03)
   Future<void> checkAndAutoVerifyAssignments() async {
@@ -1164,6 +1376,7 @@ class FirestoreService {
         _inMemoryUsers[uIdx] = _inMemoryUsers[uIdx].copyWith(
           status: UserStatus.suspended,
           activeAssignmentId: null,
+          clearActiveAssignment: true,
         );
       }
       if (isFirebaseAvailable) {
@@ -1193,7 +1406,7 @@ class FirestoreService {
       supervisorFeedback: feedback.trim(),
       deadline: newDeadline,
       assignedAt: now,
-      status: AssignmentStatus.pendingVerification,
+      status: AssignmentStatus.pending,
     );
 
     seedAssignment(newAssignment);
@@ -1256,6 +1469,7 @@ class FirestoreService {
       _inMemoryUsers[fIdx] = _inMemoryUsers[fIdx].copyWith(
         status: UserStatus.suspended,
         activeAssignmentId: null,
+        clearActiveAssignment: true,
       );
     }
 
@@ -1270,7 +1484,7 @@ class FirestoreService {
       supervisorFeedback: null,
       deadline: newDeadline,
       assignedAt: now,
-      status: AssignmentStatus.pendingVerification,
+      status: AssignmentStatus.pending,
     );
 
     seedAssignment(newAssignment);
@@ -1318,11 +1532,15 @@ class FirestoreService {
   /// Streams real-time workforce statistics for the Admin Dashboard from Firestore
   Stream<AdminDashboardStats> streamAdminDashboardStats() {
     AdminDashboardStats calculateFallbackStats() {
-      final inMemory = _inMemoryUsers;
+      final all = [...AuthService().registeredUsers, ..._inMemoryUsers];
+      final unique = <String, UserModel>{};
+      for (final u in all) {
+        unique[u.userId] = u;
+      }
       int supervisors = 0;
       int workers = 0;
       int pending = 0;
-      for (final u in inMemory) {
+      for (final u in unique.values) {
         if (u.status == UserStatus.pending) {
           pending++;
         } else if (u.status != UserStatus.suspended) {
@@ -1339,12 +1557,26 @@ class FirestoreService {
     }
 
     if (!isFirebaseAvailable) {
-      return Stream.value(calculateFallbackStats());
+      late StreamController<AdminDashboardStats> controller;
+      StreamSubscription? memSub;
+      controller = StreamController<AdminDashboardStats>(
+        onListen: () {
+          controller.add(calculateFallbackStats());
+          memSub = _inMemoryChangeNotifier.stream.listen((_) {
+            if (!controller.isClosed) {
+              controller.add(calculateFallbackStats());
+            }
+          });
+        },
+        onCancel: () => memSub?.cancel(),
+      );
+      return controller.stream;
     }
 
     final controller = StreamController<AdminDashboardStats>.broadcast();
     StreamSubscription? usersSub;
     StreamSubscription? wardsSub;
+    StreamSubscription? memSub;
 
     List<QueryDocumentSnapshot<Map<String, dynamic>>> latestUsers = [];
     int latestWardsCount = 0;
@@ -1379,6 +1611,19 @@ class FirestoreService {
         }
       }
 
+      // Merge any in-memory/auth users not yet in latestUsers
+      final allMem = [...AuthService().registeredUsers, ..._inMemoryUsers];
+      for (final u in allMem) {
+        if (!seenUserIds.contains(u.userId)) {
+          if (u.status == UserStatus.pending) {
+            pending++;
+          } else if (u.status != UserStatus.suspended) {
+            if (u.role == UserRole.supervisor) supervisors++;
+            if (u.role == UserRole.worker) workers++;
+          }
+        }
+      }
+
       int finalWards = latestWardsCount;
       if (finalWards == 0 && _inMemoryWards.isNotEmpty) {
         finalWards = _inMemoryWards.length;
@@ -1394,6 +1639,10 @@ class FirestoreService {
         pendingRegistrations: pending,
       ));
     }
+
+    memSub = _inMemoryChangeNotifier.stream.listen((_) {
+      recalculateAndEmit();
+    });
 
     // Initial check on both collections & auto-seed if empty
     Future.microtask(() async {
@@ -1471,6 +1720,7 @@ class FirestoreService {
     controller.onCancel = () {
       usersSub?.cancel();
       wardsSub?.cancel();
+      memSub?.cancel();
     };
 
     return controller.stream;
@@ -1523,6 +1773,7 @@ class FirestoreService {
         status: AssignmentStatus.pendingVerification,
         completedAt: now,
       );
+      _notifyInMemoryChange();
     }
 
     if (isFirebaseAvailable) {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/user_model.dart';
 import '../models/ward_model.dart';
@@ -32,6 +33,9 @@ class _SupervisorWorkerListScreenState extends State<SupervisorWorkerListScreen>
   final Map<String, String> _workerTaskTitles = {};
   final Map<String, String> _workerTaskStatuses = {};
 
+  StreamSubscription? _assignmentsSubscription;
+  List<UserModel> _latestWorkers = [];
+
   @override
   void initState() {
     super.initState();
@@ -39,6 +43,23 @@ class _SupervisorWorkerListScreenState extends State<SupervisorWorkerListScreen>
     _loadedUser = widget.user;
     _loadedWard = widget.ward;
     _loadSupervisorAndWardData();
+    _subscribeToAssignments();
+  }
+
+  void _subscribeToAssignments() {
+    _assignmentsSubscription?.cancel();
+    final wardId = _effectiveWardId;
+    _assignmentsSubscription = _firestoreService.streamAssignmentsByWard(wardId).listen((_) {
+      if (mounted && _latestWorkers.isNotEmpty) {
+        _loadActiveTasksForWorkers(_latestWorkers, force: true);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _assignmentsSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadSupervisorAndWardData() async {
@@ -62,6 +83,7 @@ class _SupervisorWorkerListScreenState extends State<SupervisorWorkerListScreen>
         setState(() {
           _loadedWard = ward;
         });
+        _subscribeToAssignments();
       }
     }
   }
@@ -123,35 +145,38 @@ class _SupervisorWorkerListScreenState extends State<SupervisorWorkerListScreen>
     return '';
   }
 
-  void _loadActiveTasksForWorkers(List<UserModel> workers) {
+  void _loadActiveTasksForWorkers(List<UserModel> workers, {bool force = false}) {
+    _latestWorkers = workers;
     for (final worker in workers) {
-      if (worker.status == UserStatus.busy && !_workerTaskTitles.containsKey(worker.userId)) {
-        _firestoreService.getActiveAssignmentForWorker(worker.userId).then((assignment) async {
-          if (assignment != null) {
-            final task = await _firestoreService.getTask(assignment.taskId);
-            if (mounted) {
-              setState(() {
-                _workerTaskTitles[worker.userId] =
-                    task != null && task.title.isNotEmpty ? task.title : 'Active Task';
-                _workerTaskStatuses[worker.userId] = assignment.status.displayName;
-              });
+      if (worker.status == UserStatus.busy) {
+        if (force || !_workerTaskTitles.containsKey(worker.userId)) {
+          _firestoreService.getActiveAssignmentForWorker(worker.userId).then((assignment) async {
+            if (assignment != null) {
+              final task = await _firestoreService.getTask(assignment.taskId);
+              if (mounted) {
+                setState(() {
+                  _workerTaskTitles[worker.userId] =
+                      task != null && task.title.isNotEmpty ? task.title : 'Active Task';
+                  _workerTaskStatuses[worker.userId] = assignment.status.displayName;
+                });
+              }
+            } else {
+              if (mounted) {
+                setState(() {
+                  _workerTaskTitles[worker.userId] = 'Active Task';
+                  _workerTaskStatuses[worker.userId] = worker.status.displayName;
+                });
+              }
             }
-          } else {
+          }).catchError((_) {
             if (mounted) {
               setState(() {
                 _workerTaskTitles[worker.userId] = 'Active Task';
                 _workerTaskStatuses[worker.userId] = worker.status.displayName;
               });
             }
-          }
-        }).catchError((_) {
-          if (mounted) {
-            setState(() {
-              _workerTaskTitles[worker.userId] = 'Active Task';
-              _workerTaskStatuses[worker.userId] = worker.status.displayName;
-            });
-          }
-        });
+          });
+        }
       }
     }
   }
@@ -334,7 +359,11 @@ class _SupervisorWorkerListScreenState extends State<SupervisorWorkerListScreen>
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Text(
-                              wardDisplayName.isNotEmpty ? wardDisplayName : 'General',
+                              wardDisplayName.isNotEmpty
+                                  ? wardDisplayName
+                                  : (widget.ward != null && widget.ward!.name.isNotEmpty
+                                      ? widget.ward!.name
+                                      : 'ICU Ward'),
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.bold,
@@ -617,7 +646,9 @@ class _SupervisorWorkerListScreenState extends State<SupervisorWorkerListScreen>
                       MaterialPageRoute(
                         builder: (_) => SupervisorAssignTaskScreen(
                           selectedWorker: worker,
+                          user: _currentUser,
                           ward: effectiveWard,
+                          firestoreService: _firestoreService,
                         ),
                       ),
                     );
@@ -710,15 +741,19 @@ class _SupervisorWorkerListScreenState extends State<SupervisorWorkerListScreen>
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEEF2F6),
+                      color: taskStatus == 'Pending Verification'
+                          ? const Color(0xFFFEF3C7)
+                          : const Color(0xFFEEF2F6),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
                       taskStatus,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFF475569),
+                        color: taskStatus == 'Pending Verification'
+                            ? const Color(0xFFB45309)
+                            : const Color(0xFF475569),
                       ),
                     ),
                   ),

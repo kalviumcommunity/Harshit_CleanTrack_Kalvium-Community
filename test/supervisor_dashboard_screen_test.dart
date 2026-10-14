@@ -194,4 +194,48 @@ void main() {
     expect(find.byType(SupervisorPendingVerificationScreen), findsOneWidget);
     expect(find.text('Pending Verification'), findsWidgets);
   });
+
+  testWidgets('Supervisor Dashboard reactively reflects pending verification when worker completes task', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final worker = UserModel(
+      userId: 'wrk-101',
+      name: 'Ravi Kumar',
+      employeeId: 'WRK-101',
+      email: 'ravi@hospital.org',
+      role: UserRole.worker,
+      status: UserStatus.available,
+      wardId: 'ward-icu',
+    );
+    firestoreService.seedWorker(worker);
+
+    await tester.pumpWidget(createSupervisorDashboard());
+    await tester.pumpAndSettle();
+
+    // Initially 1 available worker
+    expect(find.text('AVAILABLE WORKERS'), findsOneWidget);
+
+    // Supervisor assigns task
+    final assignment = await firestoreService.createTaskAndAssignment(
+      wardId: 'ward-icu',
+      supervisorId: 'sup-101',
+      title: 'Disinfect ICU',
+      description: 'Full sanitization',
+      workerId: 'wrk-101',
+      deadline: DateTime.now().add(const Duration(hours: 3)),
+    );
+    await tester.pumpAndSettle();
+
+    // Worker marks task complete
+    await firestoreService.markAssignmentCompleted(assignment!.assignmentId);
+    await tester.pumpAndSettle();
+
+    // Pending verify count should reactively update to 1, and busy workers drops to 0
+    final stats = await firestoreService.streamSupervisorStats('ward-icu').first;
+    expect(stats.pendingVerify, 1);
+    expect(stats.busyWorkers, 0);
+  });
 }
