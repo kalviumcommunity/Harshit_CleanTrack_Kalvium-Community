@@ -337,6 +337,19 @@ class _PendingRegistrationsScreenState
     }
   }
 
+  bool _isWardSupervised(WardModel ward) {
+    if (ward.supervisorId != null && ward.supervisorId!.trim().isNotEmpty) {
+      return true;
+    }
+    if (ward.supervisorRef != null) {
+      return true;
+    }
+    final clean = formatWardDisplayName(ward.name.isNotEmpty ? ward.name : ward.wardId);
+    return _availableWards.any((w) =>
+        (w.wardId == ward.wardId || formatWardDisplayName(w.name) == clean) &&
+        ((w.supervisorId != null && w.supervisorId!.trim().isNotEmpty) || w.supervisorRef != null));
+  }
+
   Future<void> _assignWard(UserModel user) async {
     final effectiveWardId = _selectedWards[user.userId] ?? '';
 
@@ -355,16 +368,23 @@ class _PendingRegistrationsScreenState
       orElse: () => WardModel(wardId: '', name: ''),
     );
 
-    if (user.role == UserRole.worker &&
-        (targetWard.supervisorId == null || targetWard.supervisorId!.trim().isEmpty)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Cannot assign worker: this ward does not have an assigned supervisor yet.'),
-          backgroundColor: Color(0xFFEF4444),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return;
+    if (user.role == UserRole.worker && !_isWardSupervised(targetWard)) {
+      final supervisorNames = await _firestoreService.getSupervisorNames();
+      final hasSupervisorInService = supervisorNames.containsKey(effectiveWardId) ||
+          supervisorNames.containsKey(targetWard.name) ||
+          supervisorNames.containsKey(formatWardDisplayName(effectiveWardId));
+
+      if (!hasSupervisorInService) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cannot assign worker: this ward does not have an assigned supervisor yet.'),
+            backgroundColor: Color(0xFFEF4444),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
     }
 
     setState(() {
@@ -390,9 +410,12 @@ class _PendingRegistrationsScreenState
           _removedUserIds.add(user.email.toLowerCase());
         }
         if (user.role == UserRole.supervisor) {
-          final wardIdx = _availableWards.indexWhere((w) => w.wardId == effectiveWardId);
-          if (wardIdx != -1) {
-            _availableWards[wardIdx] = _availableWards[wardIdx].copyWith(supervisorId: user.userId);
+          final clean = formatWardDisplayName(effectiveWardId);
+          for (int i = 0; i < _availableWards.length; i++) {
+            if (_availableWards[i].wardId == effectiveWardId ||
+                formatWardDisplayName(_availableWards[i].name) == clean) {
+              _availableWards[i] = _availableWards[i].copyWith(supervisorId: user.userId);
+            }
           }
         }
       }
@@ -687,8 +710,8 @@ class _PendingRegistrationsScreenState
 
   Widget _buildUserCard(UserModel user) {
     final selectableWards = user.role == UserRole.supervisor
-        ? _availableWards.where((w) => w.supervisorId == null || w.supervisorId!.trim().isEmpty).toList()
-        : _availableWards.where((w) => w.supervisorId != null && w.supervisorId!.trim().isNotEmpty).toList();
+        ? _availableWards.where((w) => !_isWardSupervised(w)).toList()
+        : _availableWards.where((w) => _isWardSupervised(w)).toList();
 
     String? effectiveWardId = _selectedWards[user.userId];
     if (effectiveWardId != null && !selectableWards.any((w) => w.wardId == effectiveWardId)) {

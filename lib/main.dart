@@ -7,8 +7,6 @@ import 'screens/pending_verification_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 
-import 'services/firestore_service.dart';
-
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   _initFirebase();
@@ -20,7 +18,6 @@ Future<void> _initFirebase() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-    await FirestoreService().seedInitialWardsToFirestore();
   } catch (e) {
     debugPrint('Firebase initialization note: $e');
   }

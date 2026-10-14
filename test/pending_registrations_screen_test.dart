@@ -538,5 +538,62 @@ void main() {
     // Backend must reject the attempt
     expect(result, isFalse);
   });
+
+  testWidgets('Allows assigning worker to ward when supervisor is assigned via user profile', (WidgetTester tester) async {
+    final ward = WardModel(
+      wardId: 'ward_icu_3',
+      name: 'ICU 3',
+      supervisorId: null,
+    );
+    FirestoreService().seedWard(ward);
+
+    final supervisor = UserModel(
+      userId: 'sup-icu-3',
+      name: 'Dr. Supervisor',
+      employeeId: 'SUP-003',
+      email: 'sup3@hospital.org',
+      role: UserRole.supervisor,
+      wardId: 'ward_icu_3',
+      wardName: 'ICU 3',
+      status: UserStatus.assigned,
+    );
+    FirestoreService().seedWorker(supervisor);
+
+    final pendingWrk = UserModel(
+      userId: 'wrk-test-3',
+      name: 'Kavita Devi',
+      employeeId: 'WRK-033',
+      email: 'kavita@hospital.org',
+      role: UserRole.worker,
+      status: UserStatus.pending,
+    );
+    FirestoreService().seedWorker(pendingWrk);
+
+    await tester.pumpWidget(createPendingScreen(seed: false));
+    await tester.pumpAndSettle();
+
+    // Switch to worker tab
+    await tester.tap(find.byKey(const Key('roleToggleWorker')));
+    await tester.pumpAndSettle();
+
+    // Open dropdown
+    await tester.tap(find.byKey(const Key('wardDropdown_wrk-test-3')));
+    await tester.pumpAndSettle();
+
+    // ICU 3 must appear because it has an assigned supervisor
+    expect(find.text('ICU 3'), findsWidgets);
+    await tester.tap(find.text('ICU 3').last);
+    await tester.pumpAndSettle();
+
+    // Tap ASSIGN WARD
+    await tester.tap(find.text('ASSIGN WARD'));
+    await tester.pumpAndSettle();
+
+    // Must succeed without error snackbar
+    expect(find.textContaining('Cannot assign worker: this ward does not have an assigned supervisor'), findsNothing);
+    final updatedWorker = await FirestoreService().getUserProfile('wrk-test-3');
+    expect(updatedWorker?.status, UserStatus.available);
+    expect(updatedWorker?.wardId, 'ward_icu_3');
+  });
 }
 
