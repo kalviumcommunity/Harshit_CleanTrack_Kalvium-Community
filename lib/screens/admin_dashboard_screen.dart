@@ -434,12 +434,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         ? stats.pendingRegistrations
                         : null,
                     subtitle: 'Review and assign personnel',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PendingRegistrationsScreen(adminUser: widget.user),
-                      ),
-                    ),
+                    onTap: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PendingRegistrationsScreen(adminUser: widget.user),
+                        ),
+                      );
+                      if (mounted) {
+                        setState(() {
+                          _initStatsStream();
+                        });
+                      }
+                    },
                   ),
                   _buildQuickActionTile(
                     context: context,

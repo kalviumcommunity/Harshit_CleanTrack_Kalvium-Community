@@ -632,7 +632,7 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
                               MaterialPageRoute(
                                 builder: (_) => SupervisorWorkerListScreen(
                                   user: _currentUser,
-                                  ward: _ward,
+                                  ward: _ward ?? WardModel(wardId: wardId.isNotEmpty ? wardId : 'ward-icu', name: displayWardName),
                                   firestoreService: _firestoreService,
                                 ),
                               ),
@@ -667,7 +667,11 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => const SupervisorAssignTaskScreen(),
+                                builder: (_) => SupervisorAssignTaskScreen(
+                                  user: _currentUser,
+                                  ward: _ward ?? WardModel(wardId: wardId.isNotEmpty ? wardId : 'ward-icu', name: displayWardName),
+                                  firestoreService: _firestoreService,
+                                ),
                               ),
                             );
                           },

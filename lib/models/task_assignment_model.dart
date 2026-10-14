@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum AssignmentStatus {
+  pending,
   completed,
   pendingVerification,
   verified,
@@ -9,6 +10,8 @@ enum AssignmentStatus {
 
   String get displayName {
     switch (this) {
+      case AssignmentStatus.pending:
+        return 'Pending';
       case AssignmentStatus.completed:
         return 'Completed';
       case AssignmentStatus.pendingVerification:
@@ -23,8 +26,11 @@ enum AssignmentStatus {
   }
 
   static AssignmentStatus fromString(String? status) {
-    if (status == null) return AssignmentStatus.pendingVerification;
+    if (status == null) return AssignmentStatus.pending;
     switch (status.toLowerCase()) {
+      case 'pending':
+      case 'assigned':
+        return AssignmentStatus.pending;
       case 'completed':
         return AssignmentStatus.completed;
       case 'pending verification':
@@ -39,7 +45,7 @@ enum AssignmentStatus {
       case 'not_completed':
         return AssignmentStatus.notCompleted;
       default:
-        return AssignmentStatus.pendingVerification;
+        return AssignmentStatus.pending;
     }
   }
 }
@@ -84,7 +90,7 @@ class TaskAssignmentModel {
     DateTime? assignedAt,
     this.completedAt,
     this.verifiedAt,
-    this.status = AssignmentStatus.pendingVerification,
+    this.status = AssignmentStatus.pending,
   }) : assignedAt = assignedAt ?? DateTime.now();
 
   Map<String, dynamic> toJson() {

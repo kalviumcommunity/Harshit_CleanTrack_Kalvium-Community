@@ -267,6 +267,7 @@ class AuthService {
 
       _registeredUsers.add(newUser);
       _userPasswords[newUser.userId] = password;
+      _firestoreService.saveUserProfile(newUser);
       return RegisterResult.success(newUser);
     }
   }

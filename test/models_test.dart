@@ -122,12 +122,15 @@ void main() {
 
   group('13.4 TaskAssignmentModel Tests', () {
     test('AssignmentStatus display names and parsing', () {
+      expect(AssignmentStatus.pending.displayName, 'Pending');
       expect(AssignmentStatus.completed.displayName, 'Completed');
       expect(AssignmentStatus.pendingVerification.displayName, 'Pending Verification');
       expect(AssignmentStatus.verified.displayName, 'Verified');
       expect(AssignmentStatus.autoVerified.displayName, 'Auto Verified');
       expect(AssignmentStatus.notCompleted.displayName, 'Not Completed');
 
+      expect(AssignmentStatus.fromString('Pending'), AssignmentStatus.pending);
+      expect(AssignmentStatus.fromString('Assigned'), AssignmentStatus.pending);
       expect(AssignmentStatus.fromString('Completed'), AssignmentStatus.completed);
       expect(AssignmentStatus.fromString('Pending Verification'), AssignmentStatus.pendingVerification);
       expect(AssignmentStatus.fromString('Verified'), AssignmentStatus.verified);
