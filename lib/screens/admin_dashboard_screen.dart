@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
@@ -13,11 +14,7 @@ class AdminDashboardScreen extends StatefulWidget {
   final UserModel? user;
   final FirestoreService? firestoreService;
 
-  const AdminDashboardScreen({
-    super.key,
-    this.user,
-    this.firestoreService,
-  });
+  const AdminDashboardScreen({super.key, this.user, this.firestoreService});
 
   @override
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
@@ -78,9 +75,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final email = AuthService().auth.currentUser?.email;
       if (email != null && email.contains('@')) {
         final prefix = email.split('@').first;
-        final parts = prefix.replaceAll(RegExp(r'[._\d]'), ' ').trim().split(RegExp(r'\s+'));
+        final parts = prefix
+            .replaceAll(RegExp(r'[._\d]'), ' ')
+            .trim()
+            .split(RegExp(r'\s+'));
         if (parts.isNotEmpty && parts.first.isNotEmpty) {
-          return parts.map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '').join(' ');
+          return parts
+              .map(
+                (w) => w.isNotEmpty
+                    ? '${w[0].toUpperCase()}${w.substring(1)}'
+                    : '',
+              )
+              .join(' ');
         }
       }
     }
@@ -141,7 +147,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: PreferredSize(
@@ -150,16 +155,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           decoration: const BoxDecoration(
             color: Colors.white,
             border: Border(
-              bottom: BorderSide(
-                color: Color(0xFFE2E8F0),
-                width: 1,
-              ),
+              bottom: BorderSide(color: Color(0xFFE2E8F0), width: 1),
             ),
           ),
           child: SafeArea(
             bottom: false,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16.0,
+                vertical: 8.0,
+              ),
               child: Row(
                 children: [
                   Column(
@@ -217,14 +222,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              (_loadedUser ?? widget.user)?.name ?? 'Admin User',
+                              (_loadedUser ?? widget.user)?.name ??
+                                  'Admin User',
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: Color(0xFF0F172A),
                               ),
                             ),
                             Text(
-                              (_loadedUser ?? widget.user)?.email ?? 'admin@cleantrack.org',
+                              (_loadedUser ?? widget.user)?.email ??
+                                  'admin@cleantrack.org',
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: Color(0xFF64748B),
@@ -287,214 +294,219 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           final stats = snapshot.data ?? const AdminDashboardStats();
 
           return SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16.0,
+              vertical: 20.0,
+            ),
             child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Title
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text(
-                        'Admin Dashboard',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF0F172A),
-                        ),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Title
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Text(
+                      'Admin Dashboard',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF0F172A),
                       ),
-                      SizedBox(height: 4),
-                      Text(
-                        'Hospital workforce overview',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF64748B),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-
-                  // WORKFORCE SNAPSHOT Card
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16.0),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'WORKFORCE SNAPSHOT',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.6,
+                    SizedBox(height: 4),
+                    Text(
+                      'Hospital workforce overview',
+                      style: TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                // WORKFORCE SNAPSHOT Card
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16.0),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'WORKFORCE SNAPSHOT',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.6,
+                              color: Color(0xFF64748B),
+                            ),
+                          ),
+                          InkWell(
+                            key: const Key('syncSnapshotButton'),
+                            onTap: () {
+                              setState(() {
+                                _initStatsStream();
+                              });
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Workforce snapshot refreshed.',
+                                  ),
+                                  backgroundColor: Color(0xFF16A34A),
+                                  duration: Duration(seconds: 2),
+                                ),
+                              );
+                            },
+                            borderRadius: BorderRadius.circular(12),
+                            child: const Padding(
+                              padding: EdgeInsets.all(4.0),
+                              child: Icon(
+                                Icons.refresh_rounded,
+                                size: 16,
                                 color: Color(0xFF64748B),
                               ),
                             ),
-                            InkWell(
-                              key: const Key('syncSnapshotButton'),
-                              onTap: () {
-                                setState(() {
-                                  _initStatsStream();
-                                });
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Workforce snapshot refreshed.'),
-                                    backgroundColor: Color(0xFF16A34A),
-                                    duration: Duration(seconds: 2),
-                                  ),
-                                );
-                              },
-                              borderRadius: BorderRadius.circular(12),
-                              child: const Padding(
-                                padding: EdgeInsets.all(4.0),
-                                child: Icon(
-                                  Icons.refresh_rounded,
-                                  size: 16,
-                                  color: Color(0xFF64748B),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            _buildStatColumn(
-                              icon: Icons.apartment_rounded,
-                              value: stats.totalWards.toString(),
-                              label: 'TOTAL WARDS',
-                            ),
-                            _buildStatColumn(
-                              icon: Icons.manage_accounts_outlined,
-                              value: stats.totalSupervisors.toString(),
-                              label: 'SUPERVISORS',
-                            ),
-                            _buildStatColumn(
-                              icon: Icons.groups_outlined,
-                              value: stats.totalWorkers.toString(),
-                              label: 'WORKERS',
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // QUICK MANAGEMENT Section Header
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: const [
-                      Text(
-                        'QUICK MANAGEMENT',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.6,
-                          color: Color(0xFF64748B),
-                        ),
+                          ),
+                        ],
                       ),
-                      Text(
-                        '5 destinations',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                          color: Color(0xFF64748B),
-                        ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          _buildStatColumn(
+                            icon: Icons.apartment_rounded,
+                            value: stats.totalWards.toString(),
+                            label: 'TOTAL WARDS',
+                          ),
+                          _buildStatColumn(
+                            icon: Icons.manage_accounts_outlined,
+                            value: stats.totalSupervisors.toString(),
+                            label: 'SUPERVISORS',
+                          ),
+                          _buildStatColumn(
+                            icon: Icons.groups_outlined,
+                            value: stats.totalWorkers.toString(),
+                            label: 'WORKERS',
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                ),
+                const SizedBox(height: 24),
 
-                  // 5 Destinations
-                  _buildQuickActionTile(
-                    context: context,
-                    key: const Key('pendingRegistrationsTile'),
-                    icon: Icons.person_add_alt_outlined,
-                    title: 'Pending registrations',
-                    badgeCount: stats.pendingRegistrations > 0
-                        ? stats.pendingRegistrations
-                        : null,
-                    subtitle: 'Review and assign personnel',
-                    onTap: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => PendingRegistrationsScreen(adminUser: widget.user),
-                        ),
-                      );
-                      if (mounted) {
-                        setState(() {
-                          _initStatsStream();
-                        });
-                      }
-                    },
-                  ),
-                  _buildQuickActionTile(
-                    context: context,
-                    key: const Key('supervisorManagementTile'),
-                    icon: Icons.manage_accounts_outlined,
-                    title: 'Supervisor management',
-                    subtitle: 'Wards, teams and account status',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const SupervisorManagementScreen(),
+                // QUICK MANAGEMENT Section Header
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: const [
+                    Text(
+                      'QUICK MANAGEMENT',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.6,
+                        color: Color(0xFF64748B),
                       ),
                     ),
-                  ),
-                  _buildQuickActionTile(
-                    context: context,
-                    key: const Key('wardManagementTile'),
-                    icon: Icons.apartment_rounded,
-                    title: 'Ward management',
-                    subtitle: 'Coverage across ${stats.totalWards} wards',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const WardManagementScreen(),
+                    Text(
+                      '5 destinations',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF64748B),
                       ),
                     ),
-                  ),
-                  _buildQuickActionTile(
-                    context: context,
-                    key: const Key('workerManagementTile'),
-                    icon: Icons.groups_outlined,
-                    title: 'Worker management',
-                    subtitle: 'Roster, status and suspensions',
-                    onTap: () => Navigator.push(
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // 5 Destinations
+                _buildQuickActionTile(
+                  context: context,
+                  key: const Key('pendingRegistrationsTile'),
+                  icon: Icons.person_add_alt_outlined,
+                  title: 'Pending registrations',
+                  badgeCount: stats.pendingRegistrations > 0
+                      ? stats.pendingRegistrations
+                      : null,
+                  subtitle: 'Review and assign personnel',
+                  onTap: () async {
+                    await Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => WorkerManagementScreen(adminUser: _currentUser),
+                        builder: (_) =>
+                            PendingRegistrationsScreen(adminUser: widget.user),
                       ),
+                    );
+                    if (mounted) {
+                      setState(() {
+                        _initStatsStream();
+                      });
+                    }
+                  },
+                ),
+                _buildQuickActionTile(
+                  context: context,
+                  key: const Key('supervisorManagementTile'),
+                  icon: Icons.manage_accounts_outlined,
+                  title: 'Supervisor management',
+                  subtitle: 'Wards, teams and account status',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          SupervisorManagementScreen(adminUser: widget.user),
                     ),
                   ),
-                  _buildQuickActionTile(
-                    context: context,
-                    key: const Key('monthlyReportsTile'),
-                    icon: Icons.description_outlined,
-                    title: 'Monthly ward reports',
-                    subtitle: _getCurrentMonthPerformance(),
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const MonthlyReportsScreen(),
-                      ),
+                ),
+                _buildQuickActionTile(
+                  context: context,
+                  key: const Key('wardManagementTile'),
+                  icon: Icons.apartment_rounded,
+                  title: 'Ward management',
+                  subtitle: 'Coverage across ${stats.totalWards} wards',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const WardManagementScreen(),
                     ),
                   ),
-                ],
-              ),
-            );
-          },
+                ),
+                _buildQuickActionTile(
+                  context: context,
+                  key: const Key('workerManagementTile'),
+                  icon: Icons.groups_outlined,
+                  title: 'Worker management',
+                  subtitle: 'Roster, status and suspensions',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          WorkerManagementScreen(adminUser: _currentUser),
+                    ),
+                  ),
+                ),
+                _buildQuickActionTile(
+                  context: context,
+                  key: const Key('monthlyReportsTile'),
+                  icon: Icons.description_outlined,
+                  title: 'Monthly ward reports',
+                  subtitle: _getCurrentMonthPerformance(),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const MonthlyReportsScreen(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -515,11 +527,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               color: Color(0xFFF1F5F9),
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              icon,
-              size: 20,
-              color: const Color(0xFF0F172A),
-            ),
+            child: Icon(icon, size: 20, color: const Color(0xFF0F172A)),
           ),
           const SizedBox(height: 10),
           Text(
@@ -575,11 +583,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   color: Color(0xFFF1F5F9),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  icon,
-                  size: 20,
-                  color: const Color(0xFF0F172A),
-                ),
+                child: Icon(icon, size: 20, color: const Color(0xFF0F172A)),
               ),
               const SizedBox(width: 14),
               Expanded(
