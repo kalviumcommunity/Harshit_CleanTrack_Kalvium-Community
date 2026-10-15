@@ -44,8 +44,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // 1. Header
-    expect(find.text('CleanTrack Admin'), findsOneWidget);
-    expect(find.text('HOUSEKEEPING MANAGEMENT'), findsOneWidget);
+    expect(find.text('CleanTrack'), findsOneWidget);
+    expect(find.text('HOSPITAL HOUSEKEEPING MANAGEMENT'), findsOneWidget);
     expect(find.byIcon(Icons.notifications_none_rounded), findsOneWidget);
     expect(find.text('RK'), findsOneWidget); // Initials from Rajesh Kumar
 

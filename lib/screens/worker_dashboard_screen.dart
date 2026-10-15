@@ -1164,7 +1164,7 @@ class _WorkerDashboardScreenState extends State<WorkerDashboardScreen> {
               const SizedBox(height: 8),
 
               Text(
-                'You currently have no cleaning tasks in ${_formatWardDisplay(ward)}. Tasks assigned by your supervisor will appear here.',
+                'You currently have no tasks in ${_formatWardDisplay(ward)}. Tasks assigned by your supervisor will appear here.',
                 style: const TextStyle(
                   fontSize: 13.5,
                   color: Color(0xFF64748B),

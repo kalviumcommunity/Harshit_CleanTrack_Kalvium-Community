@@ -37,7 +37,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   void _initStatsStream() {
     final service = widget.firestoreService ?? FirestoreService();
-    service.seedInitialWardsToFirestore(overwrite: service.isFirebaseAvailable);
     _statsStream = service.streamAdminDashboardStats();
   }
 
@@ -140,16 +139,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  bool _hasSyncedWards = false;
-
   @override
   Widget build(BuildContext context) {
-    if (!_hasSyncedWards && widget.firestoreService == null && AuthService().isFirebaseAvailable) {
-      _hasSyncedWards = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        FirestoreService().seedInitialWardsToFirestore(overwrite: true);
-      });
-    }
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -176,7 +167,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: const [
                       Text(
-                        'CleanTrack Admin',
+                        'CleanTrack',
                         style: TextStyle(
                           color: Color(0xFF0F172A),
                           fontSize: 17,
@@ -185,7 +176,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       ),
                       SizedBox(height: 2),
                       Text(
-                        'HOUSEKEEPING MANAGEMENT',
+                        'HOSPITAL HOUSEKEEPING MANAGEMENT',
                         style: TextStyle(
                           color: Color(0xFF64748B),
                           fontSize: 10,
@@ -350,13 +341,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             ),
                             InkWell(
                               key: const Key('syncSnapshotButton'),
-                              onTap: () async {
-                                final service = widget.firestoreService ?? FirestoreService();
-                                await service.seedInitialWardsToFirestore(overwrite: true);
-                                if (!context.mounted) return;
+                              onTap: () {
+                                setState(() {
+                                  _initStatsStream();
+                                });
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('Hospital wards synchronized with database.'),
+                                    content: Text('Workforce snapshot refreshed.'),
                                     backgroundColor: Color(0xFF16A34A),
                                     duration: Duration(seconds: 2),
                                   ),
@@ -483,7 +474,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => const WorkerManagementScreen(),
+                        builder: (_) => WorkerManagementScreen(adminUser: _currentUser),
                       ),
                     ),
                   ),
