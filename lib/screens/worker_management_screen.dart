@@ -714,7 +714,7 @@ class _WorkerManagementScreenState extends State<WorkerManagementScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text(
-                      'Manage hospital housekeeping staff',
+                      'Manage Hospital Workers',
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,

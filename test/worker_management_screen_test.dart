@@ -119,7 +119,7 @@ void main() {
     await tester.pumpWidget(createWorkerScreen());
     await tester.pumpAndSettle();
 
-    expect(find.text('Manage hospital housekeeping staff'), findsOneWidget);
+    expect(find.text('Manage Hospital Workers'), findsOneWidget);
     // 3 active (Ravi: available, Aman: busy, Priya: available), 1 suspended (Sandeep)
     expect(find.byKey(const Key('activeStaffCountPill')), findsOneWidget);
     expect(find.text('3 Staff Active'), findsOneWidget);
