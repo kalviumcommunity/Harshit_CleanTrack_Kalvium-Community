@@ -553,6 +553,30 @@ class FirestoreService {
     return _inMemoryUsers.where((u) => u.status == status).toList();
   }
 
+  /// Gets all supervisors, regardless of activation status.
+  Future<List<UserModel>> getSupervisors() async {
+    if (isFirebaseAvailable) {
+      try {
+        final snapshot = await _usersCollection.get();
+        return snapshot.docs
+            .map((doc) => UserModel.fromMap(doc.data(), doc.id))
+            .where((user) => user.role == UserRole.supervisor)
+            .toList();
+      } catch (e) {
+        debugPrint('Error querying supervisors from Firestore: $e');
+        return [];
+      }
+    }
+
+    final users = <String, UserModel>{};
+    for (final user in [...AuthService().registeredUsers, ..._inMemoryUsers]) {
+      if (user.role == UserRole.supervisor) {
+        users[user.userId] = user;
+      }
+    }
+    return users.values.toList();
+  }
+
   // ==================== WARD OPERATIONS ====================
 
   /// Fetches a ward by ID from Firestore
