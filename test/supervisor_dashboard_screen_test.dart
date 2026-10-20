@@ -217,8 +217,10 @@ void main() {
 
     // Initially 1 available worker
     expect(find.text('AVAILABLE WORKERS'), findsOneWidget);
+    expect(find.text('1'), findsOneWidget); // 1 available worker
+    expect(find.text('0'), findsNWidgets(4)); // busy: 0, pending: 0, overdue: 0, pending tile: 0
 
-    // Supervisor assigns task
+    // Supervisor assigns task -> worker becomes busy
     final assignment = await firestoreService.createTaskAndAssignment(
       wardId: 'ward-icu',
       supervisorId: 'sup-101',
@@ -227,15 +229,68 @@ void main() {
       workerId: 'wrk-101',
       deadline: DateTime.now().add(const Duration(hours: 3)),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
 
-    // Worker marks task complete
+    // Available becomes 0, Busy becomes 1
+    expect(find.text('1'), findsOneWidget); // 1 busy worker
+
+    // Worker marks task complete -> Pending Verify becomes 1, Busy becomes 0
     await firestoreService.markAssignmentCompleted(assignment!.assignmentId);
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     // Pending verify count should reactively update to 1, and busy workers drops to 0
     final stats = await firestoreService.streamSupervisorStats('ward-icu').first;
     expect(stats.pendingVerify, 1);
     expect(stats.busyWorkers, 0);
+    expect(stats.availableWorkers, 0);
+
+    // Supervisor verifies task -> Available becomes 1, Pending Verify drops to 0
+    await firestoreService.verifyTaskAssignment(
+      assignmentId: assignment.assignmentId,
+      taskId: assignment.taskId,
+      workerId: assignment.workerId,
+    );
+    await tester.pump();
+
+    final statsAfterVerify = await firestoreService.streamSupervisorStats('ward-icu').first;
+    expect(statsAfterVerify.availableWorkers, 1);
+    expect(statsAfterVerify.pendingVerify, 0);
+    expect(statsAfterVerify.busyWorkers, 0);
+  });
+
+  testWidgets('Supervisor Dashboard dynamically increments available workers when worker is assigned to ward', (tester) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(createSupervisorDashboard());
+    await tester.pumpAndSettle();
+
+    // Initially 0 workers
+    var stats = await firestoreService.streamSupervisorStats('ward-icu').first;
+    expect(stats.availableWorkers, 0);
+
+    // Admin assigns worker 1 to ICU ward
+    await firestoreService.assignUserToWard(
+      userId: 'wrk-dynamic-1',
+      wardId: 'ward-icu',
+      role: UserRole.worker,
+    );
+    await tester.pump();
+
+    stats = await firestoreService.streamSupervisorStats('ward-icu').first;
+    expect(stats.availableWorkers, 1);
+
+    // Admin assigns worker 2 to ICU ward
+    await firestoreService.assignUserToWard(
+      userId: 'wrk-dynamic-2',
+      wardId: 'ward-icu',
+      role: UserRole.worker,
+    );
+    await tester.pump();
+
+    stats = await firestoreService.streamSupervisorStats('ward-icu').first;
+    expect(stats.availableWorkers, 2);
   });
 }

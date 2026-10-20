@@ -277,5 +277,29 @@ void main() {
 
       expect(find.byType(LoginScreen), findsOneWidget);
     });
+
+    testWidgets('Worker list displays Available workers on top, then Busy workers, then Suspended workers', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      seedMockupWorkers();
+
+      await tester.pumpWidget(createWorkerListScreen());
+      await tester.pumpAndSettle();
+
+      final raviPos = tester.getTopLeft(find.text('Ravi Kumar'));
+      final sunilPos = tester.getTopLeft(find.text('Sunil Joshi'));
+      final amanPos = tester.getTopLeft(find.text('Aman Singh'));
+      final sandeepPos = tester.getTopLeft(find.text('Sandeep Kumar'));
+
+      // Both Ravi Kumar and Sunil Joshi are Available, sorted alphabetically
+      expect(raviPos.dy < sunilPos.dy, isTrue, reason: 'Ravi Kumar (available) should appear above Sunil Joshi (available)');
+      // Available workers appear above Busy workers
+      expect(sunilPos.dy < amanPos.dy, isTrue, reason: 'Sunil Joshi (available) should appear above Aman Singh (busy)');
+      // Busy workers appear above Suspended workers
+      expect(amanPos.dy < sandeepPos.dy, isTrue, reason: 'Aman Singh (busy) should appear above Sandeep Kumar (suspended)');
+    });
   });
 }

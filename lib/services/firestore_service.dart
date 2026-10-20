@@ -179,8 +179,26 @@ class FirestoreService {
         return null;
       });
     }
-    final memUser = _inMemoryUsers.where((u) => u.userId == uid);
-    return Stream.value(memUser.isNotEmpty ? memUser.first : null);
+
+    UserModel? getProfile() {
+      final memUser = _inMemoryUsers.where((u) => u.userId == uid);
+      return memUser.isNotEmpty ? memUser.first : null;
+    }
+
+    late StreamController<UserModel?> controller;
+    StreamSubscription? sub;
+    controller = StreamController<UserModel?>(
+      onListen: () {
+        controller.add(getProfile());
+        sub = _inMemoryChangeNotifier.stream.listen((_) {
+          if (!controller.isClosed) {
+            controller.add(getProfile());
+          }
+        });
+      },
+      onCancel: () => sub?.cancel(),
+    );
+    return controller.stream;
   }
 
   /// Updates the status of a user
@@ -299,6 +317,42 @@ class FirestoreService {
             SetOptions(merge: true),
           );
           await batch.commit();
+
+          final idx = _inMemoryUsers.indexWhere((u) => u.userId == userId);
+          if (idx != -1) {
+            _inMemoryUsers[idx] = _inMemoryUsers[idx].copyWith(
+              wardId: wardId,
+              wardName: cleanWardName,
+              status: newStatus,
+            );
+          } else {
+            final regUsers = AuthService().registeredUsers.where((u) => u.userId == userId);
+            if (regUsers.isNotEmpty) {
+              _inMemoryUsers.add(regUsers.first.copyWith(
+                wardId: wardId,
+                wardName: cleanWardName,
+                status: newStatus,
+              ));
+            }
+          }
+          final regIdx = AuthService().registeredUsers.indexWhere((u) => u.userId == userId);
+          if (regIdx != -1) {
+            AuthService().updateUser(AuthService().registeredUsers[regIdx].copyWith(
+              wardId: wardId,
+              wardName: cleanWardName,
+              status: newStatus,
+            ));
+          }
+          final inMemWIdx = _inMemoryWards.indexWhere((w) => w.wardId == wardId || w.name == cleanWardName);
+          if (inMemWIdx != -1) {
+            _inMemoryWards[inMemWIdx] = _inMemoryWards[inMemWIdx].copyWith(
+              name: cleanWardName,
+              supervisorId: userId,
+            );
+          } else {
+            _inMemoryWards.add(WardModel(wardId: wardId, name: cleanWardName, supervisorId: userId));
+          }
+          _notifyInMemoryChange();
           return true;
         } else if (role == UserRole.worker) {
           final wardSnapshot = await wardDocRef.get();
@@ -342,6 +396,44 @@ class FirestoreService {
             'status': newStatus.displayName,
             'wardRef': wardDocRef,
           });
+
+          final idx = _inMemoryUsers.indexWhere((u) => u.userId == userId);
+          if (idx != -1) {
+            _inMemoryUsers[idx] = _inMemoryUsers[idx].copyWith(
+              wardId: wardId,
+              wardName: cleanWardName,
+              status: newStatus,
+            );
+          } else {
+            final regUsers = AuthService().registeredUsers.where((u) => u.userId == userId);
+            if (regUsers.isNotEmpty) {
+              _inMemoryUsers.add(regUsers.first.copyWith(
+                wardId: wardId,
+                wardName: cleanWardName,
+                status: newStatus,
+              ));
+            } else {
+              _inMemoryUsers.add(UserModel(
+                userId: userId,
+                name: 'Worker $userId',
+                employeeId: 'WRK-${userId.replaceAll(RegExp(r'[^0-9]'), '').padLeft(3, '0')}',
+                email: '$userId@hospital.org',
+                role: role,
+                wardId: wardId,
+                wardName: cleanWardName,
+                status: newStatus,
+              ));
+            }
+          }
+          final regIdx = AuthService().registeredUsers.indexWhere((u) => u.userId == userId);
+          if (regIdx != -1) {
+            AuthService().updateUser(AuthService().registeredUsers[regIdx].copyWith(
+              wardId: wardId,
+              wardName: cleanWardName,
+              status: newStatus,
+            ));
+          }
+          _notifyInMemoryChange();
           return true;
         }
       } catch (e) {
@@ -407,6 +499,17 @@ class FirestoreService {
       final regUsers = AuthService().registeredUsers.where((u) => u.userId == userId);
       if (regUsers.isNotEmpty) {
         _inMemoryUsers.add(regUsers.first.copyWith(
+          wardId: wardId,
+          wardName: cleanWardName,
+          status: newStatus,
+        ));
+      } else {
+        _inMemoryUsers.add(UserModel(
+          userId: userId,
+          name: 'Worker $userId',
+          employeeId: 'WRK-${userId.replaceAll(RegExp(r'[^0-9]'), '').padLeft(3, '0')}',
+          email: '$userId@hospital.org',
+          role: role,
           wardId: wardId,
           wardName: cleanWardName,
           status: newStatus,
@@ -964,44 +1067,88 @@ class FirestoreService {
 
   /// Gets all workers assigned to a specific ward from Firestore
   Future<List<UserModel>> getWorkersByWard(String wardId) async {
+    bool matchesWard(String? itemWardId, String? itemWardName, String targetWardId) {
+      if (targetWardId.isEmpty) return true;
+      final cleanTarget = formatWardDisplayName(targetWardId).toLowerCase();
+      if (itemWardId != null && itemWardId.trim().isNotEmpty) {
+        if (itemWardId.trim().toLowerCase() == targetWardId.trim().toLowerCase()) return true;
+        if (formatWardDisplayName(itemWardId).toLowerCase() == cleanTarget) return true;
+      }
+      if (itemWardName != null && itemWardName.trim().isNotEmpty) {
+        if (itemWardName.trim().toLowerCase() == targetWardId.trim().toLowerCase()) return true;
+        if (formatWardDisplayName(itemWardName).toLowerCase() == cleanTarget) return true;
+      }
+      return false;
+    }
+
     if (isFirebaseAvailable) {
       try {
-        final query = wardId.isEmpty
-            ? await _usersCollection.where('role', isEqualTo: 'Worker').get()
-            : await _usersCollection
-                .where('role', isEqualTo: 'Worker')
-                .where('wardId', isEqualTo: wardId)
-                .get();
-        return query.docs.map((doc) => UserModel.fromMap(doc.data(), doc.id)).toList();
+        final query = await _usersCollection.where('role', isEqualTo: 'Worker').get();
+        final docs = query.docs.map((doc) => UserModel.fromMap(doc.data(), doc.id)).toList();
+        final allMem = [...AuthService().registeredUsers, ..._inMemoryUsers];
+        final unique = <String, UserModel>{};
+        for (final u in docs) {
+          if (u.role == UserRole.worker && matchesWard(u.wardId, u.wardName, wardId)) {
+            unique[u.userId] = u;
+          }
+        }
+        for (final u in allMem) {
+          if (u.role == UserRole.worker && matchesWard(u.wardId, u.wardName, wardId)) {
+            unique[u.userId] = u;
+          }
+        }
+        return sortWorkersByStatus(unique.values);
       } catch (e) {
         debugPrint('Error fetching workers by ward from Firestore: $e');
         return [];
       }
     }
+    final all = [...AuthService().registeredUsers, ..._inMemoryUsers];
     final unique = <String, UserModel>{};
-    for (final u in _inMemoryUsers) {
-      if (u.role == UserRole.worker && (wardId.isEmpty || u.wardId == wardId)) {
+    for (final u in all) {
+      if (u.role == UserRole.worker && matchesWard(u.wardId, u.wardName, wardId)) {
         unique[u.userId] = u;
       }
     }
-    return unique.values.toList();
+    return sortWorkersByStatus(unique.values);
   }
 
-  /// Streams workers assigned to a specific ward from Firestore
+  /// Streams workers assigned to a specific ward from Firestore sorted by status:
+  /// Available workers appear on top, then busy workers, and then suspended workers.
   Stream<List<UserModel>> streamWorkersByWard(String wardId) {
-    if (isFirebaseAvailable) {
-      if (wardId.isEmpty) {
-        return _usersCollection
-            .where('role', isEqualTo: 'Worker')
-            .snapshots()
-            .map((snapshot) => snapshot.docs.map((doc) => UserModel.fromMap(doc.data(), doc.id)).toList());
+    bool matchesWard(String? itemWardId, String? itemWardName, String targetWardId) {
+      if (targetWardId.isEmpty) return true;
+      final cleanTarget = formatWardDisplayName(targetWardId).toLowerCase();
+      if (itemWardId != null && itemWardId.trim().isNotEmpty) {
+        if (itemWardId.trim().toLowerCase() == targetWardId.trim().toLowerCase()) return true;
+        if (formatWardDisplayName(itemWardId).toLowerCase() == cleanTarget) return true;
       }
+      if (itemWardName != null && itemWardName.trim().isNotEmpty) {
+        if (itemWardName.trim().toLowerCase() == targetWardId.trim().toLowerCase()) return true;
+        if (formatWardDisplayName(itemWardName).toLowerCase() == cleanTarget) return true;
+      }
+      return false;
+    }
+
+    if (isFirebaseAvailable) {
       return _usersCollection
           .where('role', isEqualTo: 'Worker')
-          .where('wardId', isEqualTo: wardId)
           .snapshots()
           .map((snapshot) {
-        return snapshot.docs.map((doc) => UserModel.fromMap(doc.data(), doc.id)).toList();
+        final allDocs = snapshot.docs.map((doc) => UserModel.fromMap(doc.data(), doc.id)).toList();
+        final allMem = [...AuthService().registeredUsers, ..._inMemoryUsers];
+        final unique = <String, UserModel>{};
+        for (final u in allDocs) {
+          if (u.role == UserRole.worker && matchesWard(u.wardId, u.wardName, wardId)) {
+            unique[u.userId] = u;
+          }
+        }
+        for (final u in allMem) {
+          if (u.role == UserRole.worker && matchesWard(u.wardId, u.wardName, wardId)) {
+            unique[u.userId] = u;
+          }
+        }
+        return sortWorkersByStatus(unique.values);
       });
     }
 
@@ -1009,11 +1156,11 @@ class FirestoreService {
       final all = [...AuthService().registeredUsers, ..._inMemoryUsers];
       final unique = <String, UserModel>{};
       for (final u in all) {
-        if (u.role == UserRole.worker && (wardId.isEmpty || u.wardId == wardId)) {
+        if (u.role == UserRole.worker && matchesWard(u.wardId, u.wardName, wardId)) {
           unique[u.userId] = u;
         }
       }
-      return unique.values.toList();
+      return sortWorkersByStatus(unique.values);
     }
 
     late StreamController<List<UserModel>> controller;
@@ -1108,20 +1255,47 @@ class FirestoreService {
 
   /// Streams live Supervisor Dashboard statistics from Firestore
   Stream<SupervisorDashboardStats> streamSupervisorStats(String wardId) {
+    bool matchesWard(String? itemWardId, String? itemWardName, String targetWardId) {
+      if (targetWardId.isEmpty) return true;
+      final cleanTarget = formatWardDisplayName(targetWardId).toLowerCase();
+      if (itemWardId != null && itemWardId.trim().isNotEmpty) {
+        if (itemWardId.trim().toLowerCase() == targetWardId.trim().toLowerCase()) return true;
+        if (formatWardDisplayName(itemWardId).toLowerCase() == cleanTarget) return true;
+      }
+      if (itemWardName != null && itemWardName.trim().isNotEmpty) {
+        if (itemWardName.trim().toLowerCase() == targetWardId.trim().toLowerCase()) return true;
+        if (formatWardDisplayName(itemWardName).toLowerCase() == cleanTarget) return true;
+      }
+      return false;
+    }
+
     SupervisorDashboardStats getCalculatedStats(
       List<UserModel> workers,
       List<TaskAssignmentModel> assignments,
       String wardName,
     ) {
+      final filteredWorkers = workers
+          .where((u) => u.role == UserRole.worker && matchesWard(u.wardId, u.wardName, wardId))
+          .toList();
+
+      final filteredAssignments = assignments
+          .where((a) =>
+              matchesWard(a.wardId, null, wardId) ||
+              filteredWorkers.any((w) => w.userId == a.workerId))
+          .toList();
+
       int pendingVerify = 0;
       int overdue = 0;
       final now = DateTime.now();
 
       final pendingWorkerIds = <String>{};
-      for (final a in assignments) {
+      final activeWorkerIds = <String>{};
+      for (final a in filteredAssignments) {
         if (a.status == AssignmentStatus.pendingVerification) {
           pendingVerify++;
           pendingWorkerIds.add(a.workerId);
+        } else if (a.status == AssignmentStatus.pending) {
+          activeWorkerIds.add(a.workerId);
         }
         if (a.status != AssignmentStatus.verified && a.status != AssignmentStatus.autoVerified) {
           if (a.deadline.isBefore(now)) {
@@ -1132,15 +1306,16 @@ class FirestoreService {
 
       int available = 0;
       int busy = 0;
-      for (final w in workers) {
-        if (w.status == UserStatus.available) {
-          available++;
-        } else if (w.status == UserStatus.busy) {
-          // If the worker has submitted their task and it is awaiting review,
-          // they are counted under Pending Verification rather than actively "On task"
+      for (final w in filteredWorkers) {
+        if (w.status == UserStatus.suspended) {
+          continue;
+        }
+        if (w.status == UserStatus.busy || activeWorkerIds.contains(w.userId)) {
           if (!pendingWorkerIds.contains(w.userId)) {
             busy++;
           }
+        } else if (w.status == UserStatus.available) {
+          available++;
         }
       }
 
@@ -1160,7 +1335,7 @@ class FirestoreService {
 
     List<UserModel> latestWorkers = [];
     List<TaskAssignmentModel> latestAssignments = [];
-    String wardName = wardId.isNotEmpty ? wardId : 'ICU Ward';
+    String wardName = wardId.isNotEmpty ? formatWardDisplayName(wardId) : 'ICU Ward';
 
     void updateStats() {
       if (!controller.isClosed) {
@@ -1168,33 +1343,23 @@ class FirestoreService {
       }
     }
 
-    if (!isFirebaseAvailable) {
-      void loadInMemory() {
-        final all = [...AuthService().registeredUsers, ..._inMemoryUsers];
-        final unique = <String, UserModel>{};
-        for (final u in all) {
+    void loadInMemory() {
+      final all = [...AuthService().registeredUsers, ..._inMemoryUsers];
+      final unique = <String, UserModel>{};
+      for (final u in all) {
+        if (u.role == UserRole.worker) {
           unique[u.userId] = u;
         }
-        latestWorkers = unique.values
-            .where((u) =>
-                u.role == UserRole.worker &&
-                (wardId.isEmpty ||
-                    u.wardId == wardId ||
-                    u.wardName == wardId ||
-                    formatWardDisplayName(u.wardId ?? '') == formatWardDisplayName(wardId)))
-            .toList();
-        latestAssignments = _inMemoryAssignments
-            .where((a) =>
-                wardId.isEmpty ||
-                a.wardId == wardId ||
-                formatWardDisplayName(a.wardId) == formatWardDisplayName(wardId))
-            .toList();
-        final ward = _inMemoryWards.where((w) =>
-            w.wardId == wardId || formatWardDisplayName(w.name) == formatWardDisplayName(wardId));
-        wardName = ward.isNotEmpty ? ward.first.name : (wardId.isNotEmpty ? formatWardDisplayName(wardId) : 'ICU Ward');
-        updateStats();
       }
+      latestWorkers = unique.values.toList();
+      latestAssignments = List.of(_inMemoryAssignments);
+      final ward = _inMemoryWards.where((w) =>
+          w.wardId == wardId || formatWardDisplayName(w.name) == formatWardDisplayName(wardId));
+      wardName = ward.isNotEmpty ? ward.first.name : (wardId.isNotEmpty ? formatWardDisplayName(wardId) : 'ICU Ward');
+      updateStats();
+    }
 
+    if (!isFirebaseAvailable) {
       controller = StreamController<SupervisorDashboardStats>(
         onListen: () {
           loadInMemory();
@@ -1209,15 +1374,13 @@ class FirestoreService {
       return controller.stream;
     }
 
-    final workersStream = (wardId.isNotEmpty
-        ? _usersCollection.where('wardId', isEqualTo: wardId).snapshots()
-        : _usersCollection.snapshots());
-    final assignmentsStream = (wardId.isNotEmpty
-        ? _taskAssignmentsCollection.where('wardId', isEqualTo: wardId).snapshots()
-        : _taskAssignmentsCollection.snapshots());
+    final workersStream = _usersCollection.snapshots();
+    final assignmentsStream = _taskAssignmentsCollection.snapshots();
 
     controller = StreamController<SupervisorDashboardStats>(
       onListen: () {
+        loadInMemory();
+
         if (wardId.isNotEmpty) {
           _wardsCollection.doc(wardId).get().then((wDoc) {
             if (wDoc.exists && wDoc.data() != null) {
@@ -1229,14 +1392,39 @@ class FirestoreService {
 
         workersSub = workersStream.listen((snap) {
           final allDocs = snap.docs.map((d) => UserModel.fromMap(d.data(), d.id)).toList();
-          latestWorkers = allDocs.where((u) => u.role == UserRole.worker).toList();
+          final uniqueMap = <String, UserModel>{};
+          for (final w in latestWorkers) {
+            uniqueMap[w.userId] = w;
+          }
+          for (final u in allDocs) {
+            if (u.role == UserRole.worker) {
+              uniqueMap[u.userId] = u;
+            }
+          }
+          for (final u in [...AuthService().registeredUsers, ..._inMemoryUsers]) {
+            if (u.role == UserRole.worker) {
+              uniqueMap[u.userId] = u;
+            }
+          }
+          latestWorkers = uniqueMap.values.toList();
           updateStats();
         }, onError: (e) {
           if (!controller.isClosed) controller.addError(e);
         });
 
         assignmentsSub = assignmentsStream.listen((snap) {
-          latestAssignments = snap.docs.map((d) => TaskAssignmentModel.fromMap(d.data(), d.id)).toList();
+          final allDocs = snap.docs.map((d) => TaskAssignmentModel.fromMap(d.data(), d.id)).toList();
+          final uniqueAssign = <String, TaskAssignmentModel>{};
+          for (final a in latestAssignments) {
+            uniqueAssign[a.assignmentId] = a;
+          }
+          for (final a in allDocs) {
+            uniqueAssign[a.assignmentId] = a;
+          }
+          for (final a in _inMemoryAssignments) {
+            uniqueAssign[a.assignmentId] = a;
+          }
+          latestAssignments = uniqueAssign.values.toList();
           updateStats();
         }, onError: (e) {
           if (!controller.isClosed) controller.addError(e);
@@ -1244,23 +1432,26 @@ class FirestoreService {
 
         memorySub = _inMemoryChangeNotifier.stream.listen((_) {
           final allMem = [...AuthService().registeredUsers, ..._inMemoryUsers];
-          if (allMem.isNotEmpty) {
-            final uniqueMap = <String, UserModel>{};
-            for (final w in latestWorkers) {
-              uniqueMap[w.userId] = w;
-            }
-            for (final u in allMem) {
-              if (u.role == UserRole.worker &&
-                  (wardId.isEmpty ||
-                      u.wardId == wardId ||
-                      u.wardName == wardId ||
-                      formatWardDisplayName(u.wardId ?? '') == formatWardDisplayName(wardId))) {
-                uniqueMap[u.userId] = u;
-              }
-            }
-            latestWorkers = uniqueMap.values.toList();
-            updateStats();
+          final uniqueMap = <String, UserModel>{};
+          for (final w in latestWorkers) {
+            uniqueMap[w.userId] = w;
           }
+          for (final u in allMem) {
+            if (u.role == UserRole.worker) {
+              uniqueMap[u.userId] = u;
+            }
+          }
+          latestWorkers = uniqueMap.values.toList();
+
+          final uniqueAssign = <String, TaskAssignmentModel>{};
+          for (final a in latestAssignments) {
+            uniqueAssign[a.assignmentId] = a;
+          }
+          for (final a in _inMemoryAssignments) {
+            uniqueAssign[a.assignmentId] = a;
+          }
+          latestAssignments = uniqueAssign.values.toList();
+          updateStats();
         });
       },
       onCancel: () {
@@ -1302,7 +1493,7 @@ class FirestoreService {
       workerId: workerId,
       wardId: wardId,
       assignmentNumber: 1,
-      attempts: 1,
+      attempts: 0,
       deadline: deadline,
       assignedAt: now,
       status: AssignmentStatus.pending,
@@ -1318,6 +1509,14 @@ class FirestoreService {
         activeAssignmentId: assignmentId,
       );
     }
+    final authIdx = AuthService().registeredUsers.indexWhere((u) => u.userId == workerId);
+    if (authIdx != -1) {
+      AuthService().updateUser(AuthService().registeredUsers[authIdx].copyWith(
+        status: UserStatus.busy,
+        activeAssignmentId: assignmentId,
+      ));
+    }
+    _notifyInMemoryChange();
 
     if (isFirebaseAvailable) {
       try {
@@ -1373,6 +1572,14 @@ class FirestoreService {
         activeAssignmentId: null,
         clearActiveAssignment: true,
       );
+    }
+    final authIdx = AuthService().registeredUsers.indexWhere((u) => u.userId == effectiveWorkerId);
+    if (authIdx != -1) {
+      AuthService().updateUser(AuthService().registeredUsers[authIdx].copyWith(
+        status: UserStatus.available,
+        activeAssignmentId: null,
+        clearActiveAssignment: true,
+      ));
     }
     _notifyInMemoryChange();
 
@@ -1441,6 +1648,15 @@ class FirestoreService {
         clearActiveAssignment: true,
       );
     }
+    final authIdx = AuthService().registeredUsers.indexWhere((u) => u.userId == effectiveWorkerId);
+    if (authIdx != -1) {
+      AuthService().updateUser(AuthService().registeredUsers[authIdx].copyWith(
+        status: UserStatus.available,
+        activeAssignmentId: null,
+        clearActiveAssignment: true,
+      ));
+    }
+    _notifyInMemoryChange();
 
     if (isFirebaseAvailable) {
       try {
@@ -1474,6 +1690,303 @@ class FirestoreService {
 
   /// Read-only view of in-memory task assignments for test inspection
   List<TaskAssignmentModel> get inMemoryAssignments => List.unmodifiable(_inMemoryAssignments);
+
+  /// Retrieves an assignment by ID
+  Future<TaskAssignmentModel?> getAssignment(String assignmentId) async {
+    final match = _inMemoryAssignments.where((a) => a.assignmentId == assignmentId);
+    if (match.isNotEmpty) return match.first;
+    if (isFirebaseAvailable) {
+      try {
+        final doc = await _taskAssignmentsCollection.doc(assignmentId).get();
+        if (doc.exists && doc.data() != null) {
+          return TaskAssignmentModel.fromMap(doc.data()!, doc.id);
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  /// Read-only view of in-memory users for test inspection
+  List<UserModel> get inMemoryUsers => List.unmodifiable(_inMemoryUsers);
+
+  /// Streams assignments pending verification for a specific ward
+  Stream<List<TaskAssignmentModel>> streamPendingVerificationAssignments(String wardId) {
+    if (isFirebaseAvailable) {
+      if (wardId.isEmpty) {
+        return _taskAssignmentsCollection
+            .where('status', isEqualTo: AssignmentStatus.pendingVerification.displayName)
+            .snapshots()
+            .map((snapshot) {
+          return snapshot.docs.map((doc) => TaskAssignmentModel.fromMap(doc.data(), doc.id)).toList();
+        });
+      }
+      return _taskAssignmentsCollection
+          .where('wardId', isEqualTo: wardId)
+          .where('status', isEqualTo: AssignmentStatus.pendingVerification.displayName)
+          .snapshots()
+          .map((snapshot) {
+        return snapshot.docs.map((doc) => TaskAssignmentModel.fromMap(doc.data(), doc.id)).toList();
+      });
+    }
+
+    List<TaskAssignmentModel> getFiltered() {
+      return _inMemoryAssignments
+          .where((a) =>
+              (wardId.isEmpty || a.wardId == wardId) &&
+              a.status == AssignmentStatus.pendingVerification)
+          .toList();
+    }
+
+    late StreamController<List<TaskAssignmentModel>> controller;
+    StreamSubscription? sub;
+    controller = StreamController<List<TaskAssignmentModel>>(
+      onListen: () {
+        controller.add(getFiltered());
+        sub = _inMemoryChangeNotifier.stream.listen((_) {
+          if (!controller.isClosed) {
+            controller.add(getFiltered());
+          }
+        });
+      },
+      onCancel: () => sub?.cancel(),
+    );
+    return controller.stream;
+  }
+
+  /// Gets assignments pending verification for a specific ward
+  Future<List<TaskAssignmentModel>> getPendingVerificationAssignments(String wardId) async {
+    if (isFirebaseAvailable) {
+      try {
+        final query = wardId.isNotEmpty
+            ? await _taskAssignmentsCollection
+                .where('wardId', isEqualTo: wardId)
+                .where('status', isEqualTo: AssignmentStatus.pendingVerification.displayName)
+                .get()
+            : await _taskAssignmentsCollection
+                .where('status', isEqualTo: AssignmentStatus.pendingVerification.displayName)
+                .get();
+        return query.docs.map((doc) => TaskAssignmentModel.fromMap(doc.data(), doc.id)).toList();
+      } catch (e) {
+        debugPrint('Error getting pending verification assignments: $e');
+        return [];
+      }
+    }
+
+    return _inMemoryAssignments
+        .where((a) =>
+            (wardId.isEmpty || a.wardId == wardId) &&
+            a.status == AssignmentStatus.pendingVerification)
+        .toList();
+  }
+
+  /// Rejects an assignment submitted for verification (PRD 6.6 & 6.7 & SU02 & AC14)
+  /// - 1st or 2nd rejection: increments attempts, resets status to Pending (sent back to worker)
+  /// - 3rd rejection: marks assignment Not Completed, sets attempts to 3, and instantly suspends the worker
+  Future<bool> rejectTaskAssignment({
+    required String assignmentId,
+    required String taskId,
+    required String workerId,
+    required int currentAttempts,
+  }) async {
+    final newAttempts = currentAttempts + 1;
+
+    if (newAttempts >= 3) {
+      // 3rd rejection: 3 failed attempts reached -> Suspend worker for 1 day & mark assignment Not Completed
+      final suspendedUntil = DateTime.now().add(const Duration(days: 1));
+      final aIdx = _inMemoryAssignments.indexWhere((a) => a.assignmentId == assignmentId);
+      if (aIdx != -1) {
+        _inMemoryAssignments[aIdx] = _inMemoryAssignments[aIdx].copyWith(
+          status: AssignmentStatus.notCompleted,
+          attempts: 3,
+        );
+      }
+      final uIdx = _inMemoryUsers.indexWhere((u) => u.userId == workerId);
+      if (uIdx != -1) {
+        _inMemoryUsers[uIdx] = _inMemoryUsers[uIdx].copyWith(
+          status: UserStatus.suspended,
+          suspensionReason: '3 Failed Verification Attempts (PRD SU02)',
+          suspendedUntil: suspendedUntil,
+          activeAssignmentId: null,
+          clearActiveAssignment: true,
+        );
+      }
+      final authIdx = AuthService().registeredUsers.indexWhere((u) => u.userId == workerId);
+      if (authIdx != -1) {
+        AuthService().updateUser(AuthService().registeredUsers[authIdx].copyWith(
+          status: UserStatus.suspended,
+          suspensionReason: '3 Failed Verification Attempts (PRD SU02)',
+          suspendedUntil: suspendedUntil,
+          activeAssignmentId: null,
+          clearActiveAssignment: true,
+        ));
+      }
+      _notifyInMemoryChange();
+
+      if (isFirebaseAvailable) {
+        try {
+          await _taskAssignmentsCollection.doc(assignmentId).update({
+            'status': AssignmentStatus.notCompleted.displayName,
+            'attempts': 3,
+          });
+          await _usersCollection.doc(workerId).update({
+            'status': UserStatus.suspended.displayName,
+            'suspensionReason': '3 Failed Verification Attempts (PRD SU02)',
+            'suspendedUntil': suspendedUntil.toIso8601String(),
+            'activeAssignmentId': null,
+          });
+          return true;
+        } catch (e) {
+          debugPrint('Error suspending worker on 3rd rejection: $e');
+          return false;
+        }
+      }
+      return true;
+    } else {
+      // 1st or 2nd rejection: send back to worker dashboard as Pending
+      final aIdx = _inMemoryAssignments.indexWhere((a) => a.assignmentId == assignmentId);
+      if (aIdx != -1) {
+        _inMemoryAssignments[aIdx] = _inMemoryAssignments[aIdx].copyWith(
+          status: AssignmentStatus.pending,
+          attempts: newAttempts,
+          clearCompletedAt: true,
+        );
+      }
+      _notifyInMemoryChange();
+
+      if (isFirebaseAvailable) {
+        try {
+          await _taskAssignmentsCollection.doc(assignmentId).update({
+            'status': AssignmentStatus.pending.displayName,
+            'attempts': newAttempts,
+            'completedAt': null,
+          });
+          return true;
+        } catch (e) {
+          debugPrint('Error rejecting task assignment: $e');
+          return false;
+        }
+      }
+      return true;
+    }
+  }
+
+  /// Handles a missed deadline (PRD SU01 & AC13)
+  /// Immediately suspends the worker for 1 day and marks assignment as Not Completed.
+  Future<bool> handleMissedDeadline({
+    required String assignmentId,
+    required String workerId,
+    String? taskId,
+  }) async {
+    final suspendedUntil = DateTime.now().add(const Duration(days: 1));
+    final aIdx = _inMemoryAssignments.indexWhere((a) => a.assignmentId == assignmentId);
+    if (aIdx != -1) {
+      _inMemoryAssignments[aIdx] = _inMemoryAssignments[aIdx].copyWith(
+        status: AssignmentStatus.notCompleted,
+      );
+    }
+    final uIdx = _inMemoryUsers.indexWhere((u) => u.userId == workerId);
+    if (uIdx != -1) {
+      _inMemoryUsers[uIdx] = _inMemoryUsers[uIdx].copyWith(
+        status: UserStatus.suspended,
+        suspensionReason: 'Missed Task Deadline (PRD SU01)',
+        suspendedUntil: suspendedUntil,
+        activeAssignmentId: null,
+        clearActiveAssignment: true,
+      );
+    }
+    final authIdx = AuthService().registeredUsers.indexWhere((u) => u.userId == workerId);
+    if (authIdx != -1) {
+      AuthService().updateUser(AuthService().registeredUsers[authIdx].copyWith(
+        status: UserStatus.suspended,
+        suspensionReason: 'Missed Task Deadline (PRD SU01)',
+        suspendedUntil: suspendedUntil,
+        activeAssignmentId: null,
+        clearActiveAssignment: true,
+      ));
+    }
+    _notifyInMemoryChange();
+
+    if (isFirebaseAvailable) {
+      try {
+        await _taskAssignmentsCollection.doc(assignmentId).update({
+          'status': AssignmentStatus.notCompleted.displayName,
+        });
+        await _usersCollection.doc(workerId).update({
+          'status': UserStatus.suspended.displayName,
+          'suspensionReason': 'Missed Task Deadline (PRD SU01)',
+          'suspendedUntil': suspendedUntil.toIso8601String(),
+          'activeAssignmentId': null,
+        });
+        return true;
+      } catch (e) {
+        debugPrint('Error suspending worker on missed deadline in Firestore: $e');
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Checks and transitions assignments past their deadline to Not Completed and suspends worker (PRD SU01 & AC13)
+  Future<void> checkMissedDeadlines() async {
+    final now = DateTime.now();
+
+    for (int i = 0; i < _inMemoryAssignments.length; i++) {
+      final a = _inMemoryAssignments[i];
+      if (a.status != AssignmentStatus.verified &&
+          a.status != AssignmentStatus.autoVerified &&
+          a.status != AssignmentStatus.notCompleted) {
+        if (a.deadline.isBefore(now)) {
+          await handleMissedDeadline(
+            assignmentId: a.assignmentId,
+            workerId: a.workerId,
+            taskId: a.taskId,
+          );
+        }
+      }
+    }
+  }
+
+  /// Reinstates a suspended worker (PRD A02)
+  Future<bool> reinstateWorker(String workerId) async {
+    final idx = _inMemoryUsers.indexWhere((u) => u.userId == workerId);
+    if (idx != -1) {
+      _inMemoryUsers[idx] = _inMemoryUsers[idx].copyWith(
+        status: UserStatus.available,
+        suspensionReason: null,
+        clearSuspensionReason: true,
+        suspendedUntil: null,
+        clearSuspendedUntil: true,
+        clearActiveAssignment: true,
+      );
+    }
+    final authIdx = AuthService().registeredUsers.indexWhere((u) => u.userId == workerId);
+    if (authIdx != -1) {
+      AuthService().updateUser(AuthService().registeredUsers[authIdx].copyWith(
+        status: UserStatus.available,
+        suspensionReason: null,
+        clearSuspensionReason: true,
+        suspendedUntil: null,
+        clearSuspendedUntil: true,
+        clearActiveAssignment: true,
+      ));
+    }
+    _notifyInMemoryChange();
+    if (isFirebaseAvailable) {
+      try {
+        await _usersCollection.doc(workerId).update({
+          'status': UserStatus.available.displayName,
+          'suspensionReason': null,
+          'suspendedUntil': null,
+          'activeAssignmentId': null,
+        });
+        return true;
+      } catch (e) {
+        debugPrint('Error reinstating worker: $e');
+        return false;
+      }
+    }
+    return true;
+  }
 
   /// Checks and transitions assignments unverified for >1 hour to Auto Verified (PRD 6.5 & V03)
   Future<void> checkAndAutoVerifyAssignments() async {
@@ -1535,10 +2048,13 @@ class FirestoreService {
           status: AssignmentStatus.notCompleted,
         );
       }
+      final suspendedUntil = DateTime.now().add(const Duration(days: 1));
       final uIdx = _inMemoryUsers.indexWhere((u) => u.userId == workerId);
       if (uIdx != -1) {
         _inMemoryUsers[uIdx] = _inMemoryUsers[uIdx].copyWith(
           status: UserStatus.suspended,
+          suspensionReason: '3 Failed Verification Attempts (PRD SU02)',
+          suspendedUntil: suspendedUntil,
           activeAssignmentId: null,
           clearActiveAssignment: true,
         );
@@ -1550,6 +2066,8 @@ class FirestoreService {
           });
           await _usersCollection.doc(workerId).update({
             'status': UserStatus.suspended.displayName,
+            'suspensionReason': '3 Failed Verification Attempts (PRD SU02)',
+            'suspendedUntil': suspendedUntil.toIso8601String(),
             'activeAssignmentId': null,
           });
         } catch (_) {}
@@ -1628,10 +2146,13 @@ class FirestoreService {
       );
     }
 
+    final suspendedUntil = DateTime.now().add(const Duration(days: 1));
     final fIdx = _inMemoryUsers.indexWhere((u) => u.userId == failedWorkerId);
     if (fIdx != -1) {
       _inMemoryUsers[fIdx] = _inMemoryUsers[fIdx].copyWith(
         status: UserStatus.suspended,
+        suspensionReason: '3 Failed Verification Attempts (PRD SU02)',
+        suspendedUntil: suspendedUntil,
         activeAssignmentId: null,
         clearActiveAssignment: true,
       );
@@ -1644,7 +2165,7 @@ class FirestoreService {
       workerId: newWorkerId,
       wardId: wardId,
       assignmentNumber: currentAssignmentNumber + 1,
-      attempts: 1,
+      attempts: 0,
       supervisorFeedback: null,
       deadline: newDeadline,
       assignedAt: now,
@@ -1675,6 +2196,8 @@ class FirestoreService {
         });
         await _usersCollection.doc(failedWorkerId).update({
           'status': UserStatus.suspended.displayName,
+          'suspensionReason': '3 Failed Verification Attempts (PRD SU02)',
+          'suspendedUntil': suspendedUntil.toIso8601String(),
           'activeAssignmentId': null,
         });
         await _taskAssignmentsCollection.doc(newAssignmentId).set(newAssignment.toJson());
@@ -1876,8 +2399,8 @@ class FirestoreService {
     // First check in-memory assignments (for tests and offline mode)
     final inMemoryMatch = _inMemoryAssignments.where((a) =>
         a.workerId == workerId &&
-        a.status != AssignmentStatus.verified &&
-        a.status != AssignmentStatus.autoVerified);
+        (a.status == AssignmentStatus.pending ||
+         a.status == AssignmentStatus.pendingVerification));
     if (inMemoryMatch.isNotEmpty) {
       return inMemoryMatch.last;
     }
@@ -1893,8 +2416,8 @@ class FirestoreService {
         final assignments = query.docs
             .map((doc) => TaskAssignmentModel.fromMap(doc.data(), doc.id))
             .where((a) =>
-                a.status != AssignmentStatus.verified &&
-                a.status != AssignmentStatus.autoVerified)
+                a.status == AssignmentStatus.pending ||
+                a.status == AssignmentStatus.pendingVerification)
             .toList();
         if (assignments.isNotEmpty) {
           return assignments.last;
@@ -1906,6 +2429,48 @@ class FirestoreService {
       return null;
     }
   }
+
+  /// Real-time stream of the active task assignment for a given worker
+  Stream<TaskAssignmentModel?> streamActiveAssignmentForWorker(String workerId) {
+    if (isFirebaseAvailable) {
+      return _taskAssignmentsCollection
+          .where('workerId', isEqualTo: workerId)
+          .snapshots()
+          .map((snapshot) {
+        final active = snapshot.docs
+            .map((doc) => TaskAssignmentModel.fromMap(doc.data(), doc.id))
+            .where((a) =>
+                a.status == AssignmentStatus.pending ||
+                a.status == AssignmentStatus.pendingVerification)
+            .toList();
+        return active.isNotEmpty ? active.last : null;
+      });
+    }
+
+    TaskAssignmentModel? getActive() {
+      final inMemoryMatch = _inMemoryAssignments.where((a) =>
+          a.workerId == workerId &&
+          (a.status == AssignmentStatus.pending ||
+           a.status == AssignmentStatus.pendingVerification));
+      return inMemoryMatch.isNotEmpty ? inMemoryMatch.last : null;
+    }
+
+    late StreamController<TaskAssignmentModel?> controller;
+    StreamSubscription? sub;
+    controller = StreamController<TaskAssignmentModel?>(
+      onListen: () {
+        controller.add(getActive());
+        sub = _inMemoryChangeNotifier.stream.listen((_) {
+          if (!controller.isClosed) {
+            controller.add(getActive());
+          }
+        });
+      },
+      onCancel: () => sub?.cancel(),
+    );
+    return controller.stream;
+  }
+
 
   /// Marks an assignment as completed / pending verification by the worker (PRD 6.4 & C01)
   Future<bool> markAssignmentCompleted(String assignmentId) async {

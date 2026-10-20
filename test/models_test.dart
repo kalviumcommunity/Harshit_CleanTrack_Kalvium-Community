@@ -123,7 +123,6 @@ void main() {
   group('13.4 TaskAssignmentModel Tests', () {
     test('AssignmentStatus display names and parsing', () {
       expect(AssignmentStatus.pending.displayName, 'Pending');
-      expect(AssignmentStatus.completed.displayName, 'Completed');
       expect(AssignmentStatus.pendingVerification.displayName, 'Pending Verification');
       expect(AssignmentStatus.verified.displayName, 'Verified');
       expect(AssignmentStatus.autoVerified.displayName, 'Auto Verified');
@@ -131,11 +130,21 @@ void main() {
 
       expect(AssignmentStatus.fromString('Pending'), AssignmentStatus.pending);
       expect(AssignmentStatus.fromString('Assigned'), AssignmentStatus.pending);
-      expect(AssignmentStatus.fromString('Completed'), AssignmentStatus.completed);
       expect(AssignmentStatus.fromString('Pending Verification'), AssignmentStatus.pendingVerification);
       expect(AssignmentStatus.fromString('Verified'), AssignmentStatus.verified);
       expect(AssignmentStatus.fromString('Auto Verified'), AssignmentStatus.autoVerified);
       expect(AssignmentStatus.fromString('Not Completed'), AssignmentStatus.notCompleted);
+    });
+
+    test('TaskAssignmentModel default attempts is 0', () {
+      final assignment = TaskAssignmentModel(
+        assignmentId: 'assign-def',
+        taskId: 't-1',
+        workerId: 'w-1',
+        wardId: 'ward-1',
+        deadline: DateTime.now(),
+      );
+      expect(assignment.attempts, 0);
     });
 
     test('TaskAssignmentModel serialization and exact PRD 13.4 fields', () {

@@ -453,7 +453,7 @@ class _SupervisorAssignTaskScreenState extends State<SupervisorAssignTaskScreen>
       body: StreamBuilder<List<UserModel>>(
         stream: _firestoreService.streamWorkersByWard(wardId),
         builder: (context, snapshot) {
-          final liveWorkers = snapshot.data ?? [];
+          final liveWorkers = sortWorkersByStatus(snapshot.data ?? []);
 
           // Auto-select initial worker if not already selected
           if (_selectedWorker == null && liveWorkers.isNotEmpty) {

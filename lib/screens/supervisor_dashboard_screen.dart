@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/user_model.dart';
 import '../models/ward_model.dart';
@@ -28,12 +29,45 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
   late final FirestoreService _firestoreService;
   UserModel? _loadedUser;
   WardModel? _ward;
+  StreamSubscription<UserModel?>? _userSub;
 
   @override
   void initState() {
     super.initState();
     _firestoreService = widget.firestoreService ?? FirestoreService();
     _loadUserData();
+    _setupUserSubscription();
+  }
+
+  @override
+  void dispose() {
+    _userSub?.cancel();
+    super.dispose();
+  }
+
+  void _setupUserSubscription() {
+    final uid = widget.user?.userId ?? (AuthService().isFirebaseAvailable ? AuthService().auth.currentUser?.uid : null);
+    if (uid != null && uid.isNotEmpty) {
+      _userSub?.cancel();
+      _userSub = _firestoreService.streamUserProfile(uid).listen((profile) {
+        if (!mounted) return;
+        if (profile != null) {
+          final oldWardId = _loadedUser?.wardId ?? widget.user?.wardId;
+          setState(() {
+            _loadedUser = profile;
+          });
+          if (profile.wardId != null && profile.wardId!.isNotEmpty && profile.wardId != oldWardId) {
+            _firestoreService.getWard(profile.wardId!).then((w) {
+              if (mounted && w != null) {
+                setState(() {
+                  _ward = w;
+                });
+              }
+            });
+          }
+        }
+      });
+    }
   }
 
   Future<void> _loadUserData() async {
@@ -137,7 +171,9 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final currentUser = _loadedUser ?? widget.user;
-    final wardId = currentUser?.wardId ?? '';
+    final wardId = (_ward != null && _ward!.wardId.isNotEmpty)
+        ? _ward!.wardId
+        : (currentUser?.wardId ?? '');
 
     // If supervisor is pending verification by admin
     if (currentUser != null && currentUser.status == UserStatus.pending) {
@@ -626,8 +662,8 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
                             ),
                             backgroundColor: Colors.white,
                           ),
-                          onPressed: () {
-                            Navigator.push(
+                          onPressed: () async {
+                            await Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (_) => SupervisorWorkerListScreen(
@@ -637,6 +673,10 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
                                 ),
                               ),
                             );
+                            if (mounted) {
+                              _loadUserData();
+                              setState(() {});
+                            }
                           },
                         ),
                       ),
@@ -663,8 +703,8 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
                               borderRadius: BorderRadius.circular(10),
                             ),
                           ),
-                          onPressed: () {
-                            Navigator.push(
+                          onPressed: () async {
+                            await Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (_) => SupervisorAssignTaskScreen(
@@ -674,6 +714,10 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
                                 ),
                               ),
                             );
+                            if (mounted) {
+                              _loadUserData();
+                              setState(() {});
+                            }
                           },
                         ),
                       ),
@@ -686,13 +730,21 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
                 InkWell(
                   key: const Key('pendingVerificationTile'),
                   borderRadius: BorderRadius.circular(14),
-                  onTap: () {
-                    Navigator.push(
+                  onTap: () async {
+                    await Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => const SupervisorPendingVerificationScreen(),
+                        builder: (_) => SupervisorPendingVerificationScreen(
+                          user: _currentUser,
+                          ward: _ward,
+                          firestoreService: _firestoreService,
+                        ),
                       ),
                     );
+                    if (mounted) {
+                      _loadUserData();
+                      setState(() {});
+                    }
                   },
                   child: Container(
                     width: double.infinity,
