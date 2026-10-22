@@ -2,7 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum AssignmentStatus {
   pending,
-  completed,
   pendingVerification,
   verified,
   autoVerified,
@@ -12,8 +11,6 @@ enum AssignmentStatus {
     switch (this) {
       case AssignmentStatus.pending:
         return 'Pending';
-      case AssignmentStatus.completed:
-        return 'Completed';
       case AssignmentStatus.pendingVerification:
         return 'Pending Verification';
       case AssignmentStatus.verified:
@@ -30,9 +27,8 @@ enum AssignmentStatus {
     switch (status.toLowerCase()) {
       case 'pending':
       case 'assigned':
-        return AssignmentStatus.pending;
       case 'completed':
-        return AssignmentStatus.completed;
+        return AssignmentStatus.pending;
       case 'pending verification':
       case 'pending_verification':
         return AssignmentStatus.pendingVerification;
@@ -85,7 +81,7 @@ class TaskAssignmentModel {
     required this.wardId,
     this.assignmentNumber = 1,
     this.supervisorFeedback,
-    this.attempts = 1,
+    this.attempts = 0,
     required this.deadline,
     DateTime? assignedAt,
     this.completedAt,
@@ -124,7 +120,7 @@ class TaskAssignmentModel {
       wardId: map['wardId'] ?? '',
       assignmentNumber: (map['assignmentNumber'] as num?)?.toInt() ?? 1,
       supervisorFeedback: map['supervisorFeedback'],
-      attempts: (map['attempts'] as num?)?.toInt() ?? 1,
+      attempts: (map['attempts'] as num?)?.toInt() ?? 0,
       deadline: _parseDateTime(map['deadline'], DateTime.now().add(const Duration(hours: 24))),
       assignedAt: _parseDateTime(map['assignedAt']),
       completedAt: map['completedAt'] != null ? _parseDateTime(map['completedAt']) : null,
@@ -149,6 +145,8 @@ class TaskAssignmentModel {
     DateTime? completedAt,
     DateTime? verifiedAt,
     AssignmentStatus? status,
+    bool clearCompletedAt = false,
+    bool clearVerifiedAt = false,
   }) {
     return TaskAssignmentModel(
       assignmentId: assignmentId ?? this.assignmentId,
@@ -163,8 +161,8 @@ class TaskAssignmentModel {
       attempts: attempts ?? this.attempts,
       deadline: deadline ?? this.deadline,
       assignedAt: assignedAt ?? this.assignedAt,
-      completedAt: completedAt ?? this.completedAt,
-      verifiedAt: verifiedAt ?? this.verifiedAt,
+      completedAt: clearCompletedAt ? null : (completedAt ?? this.completedAt),
+      verifiedAt: clearVerifiedAt ? null : (verifiedAt ?? this.verifiedAt),
       status: status ?? this.status,
     );
   }

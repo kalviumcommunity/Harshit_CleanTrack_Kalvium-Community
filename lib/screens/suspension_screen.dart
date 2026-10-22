@@ -1,16 +1,91 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../services/firestore_service.dart';
 import '../widgets/app_logo.dart';
 import 'login_screen.dart';
 
-class SuspensionScreen extends StatelessWidget {
+class SuspensionScreen extends StatefulWidget {
   final UserModel? user;
+  final String? suspensionReason;
+  final VoidCallback? onSuspensionRevoked;
 
-  const SuspensionScreen({super.key, this.user});
+  const SuspensionScreen({
+    super.key,
+    this.user,
+    this.suspensionReason,
+    this.onSuspensionRevoked,
+  });
+
+  @override
+  State<SuspensionScreen> createState() => _SuspensionScreenState();
+}
+
+class _SuspensionScreenState extends State<SuspensionScreen> {
+  Timer? _autoRevokeTimer;
+  bool _hasRevoked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleAutoRevoke();
+  }
+
+  @override
+  void dispose() {
+    _autoRevokeTimer?.cancel();
+    super.dispose();
+  }
+
+  DateTime _getEffectiveUntil() {
+    return widget.user?.suspendedUntil ?? DateTime.now().add(const Duration(days: 1));
+  }
+
+  void _scheduleAutoRevoke() {
+    _autoRevokeTimer?.cancel();
+    final until = _getEffectiveUntil();
+    final remaining = until.difference(DateTime.now());
+    if (remaining.isNegative || remaining == Duration.zero) {
+      _handleAutoRevoke();
+    } else {
+      _autoRevokeTimer = Timer(remaining, () {
+        if (mounted) {
+          _handleAutoRevoke();
+        }
+      });
+    }
+  }
+
+  Future<void> _handleAutoRevoke() async {
+    if (_hasRevoked) return;
+    _hasRevoked = true;
+    final workerId = widget.user?.userId;
+    if (workerId != null && workerId.isNotEmpty) {
+      await FirestoreService().reinstateWorker(workerId);
+    }
+    if (mounted && widget.onSuspensionRevoked != null) {
+      widget.onSuspensionRevoked!();
+    }
+  }
+
+  String _formatDateTime(DateTime dt) {
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    final month = months[dt.month - 1];
+    final hour = dt.hour;
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final ampm = hour >= 12 ? 'PM' : 'AM';
+    final hour12 = hour % 12 == 0 ? 12 : hour % 12;
+    return '$month ${dt.day}, ${dt.year} at $hour12:$minute $ampm';
+  }
 
   @override
   Widget build(BuildContext context) {
+    final effectiveUntil = _getEffectiveUntil();
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
@@ -45,14 +120,14 @@ class SuspensionScreen extends StatelessWidget {
                     ),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 40),
+                  const SizedBox(height: 36),
 
                   // Suspension Card
                   Container(
                     width: double.infinity,
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(44),
+                      borderRadius: BorderRadius.circular(32),
                       border: Border.all(
                         color: Colors.red.shade200,
                         width: 1.5,
@@ -66,7 +141,7 @@ class SuspensionScreen extends StatelessWidget {
                       ],
                     ),
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 28,
+                      horizontal: 24,
                       vertical: 36,
                     ),
                     child: Column(
@@ -96,29 +171,43 @@ class SuspensionScreen extends StatelessWidget {
                           ),
                           textAlign: TextAlign.center,
                         ),
-                        const SizedBox(height: 12),
-                        Text(
-                          user?.name.isNotEmpty == true
-                              ? 'Hello ${user!.name}, your account access is currently blocked due to policy limits or missed deadlines.'
-                              : 'Your account access is currently blocked due to policy limits or missed deadlines.',
-                          style: const TextStyle(
-                            fontSize: 14.5,
-                            color: Color(0xFF475569),
-                            height: 1.45,
+                        if (widget.user?.name.isNotEmpty == true) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            widget.user!.name,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF64748B),
+                            ),
+                            textAlign: TextAlign.center,
                           ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 10),
-                        const Text(
-                          'Please contact your Hospital Administrator to review your account status.',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Color(0xFF64748B),
-                            height: 1.4,
+                        ],
+                        const SizedBox(height: 24),
+
+                        // When will the worker get dashboard access back (Key: suspensionDurationBox)
+                        Container(
+                          key: const Key('suspensionDurationBox'),
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
                           ),
-                          textAlign: TextAlign.center,
+                          child: Text(
+                            'Access will be restored on:\n${_formatDateTime(effectiveUntil)}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Color(0xFF64748B),
+                              height: 1.5,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
                         ),
                         const SizedBox(height: 28),
+
                         SizedBox(
                           width: double.infinity,
                           height: 48,

@@ -75,6 +75,21 @@ enum UserStatus {
     }
   }
 
+  int get listPriority {
+    switch (this) {
+      case UserStatus.available:
+        return 0;
+      case UserStatus.busy:
+        return 1;
+      case UserStatus.suspended:
+        return 2;
+      case UserStatus.assigned:
+        return 3;
+      case UserStatus.pending:
+        return 4;
+    }
+  }
+
   static UserStatus fromString(String? status) {
     if (status == null) return UserStatus.pending;
     switch (status.toLowerCase()) {
@@ -91,6 +106,20 @@ enum UserStatus {
         return UserStatus.pending;
     }
   }
+}
+
+/// Sorts workers so Available workers appear on top, then Busy workers, then Suspended workers.
+List<UserModel> sortWorkersByStatus(Iterable<UserModel> workers) {
+  final list = List<UserModel>.from(workers);
+  list.sort((a, b) {
+    final pA = a.status.listPriority;
+    final pB = b.status.listPriority;
+    if (pA != pB) {
+      return pA.compareTo(pB);
+    }
+    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  });
+  return list;
 }
 
 DateTime _parseDateTime(dynamic value) {
@@ -112,6 +141,8 @@ class UserModel {
   final String? wardName;
   final UserStatus status;
   final String? activeAssignmentId;
+  final String? suspensionReason;
+  final DateTime? suspendedUntil;
   final DateTime createdAt;
 
   UserModel({
@@ -125,6 +156,8 @@ class UserModel {
     this.wardName,
     this.status = UserStatus.pending,
     this.activeAssignmentId,
+    this.suspensionReason,
+    this.suspendedUntil,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -142,6 +175,8 @@ class UserModel {
       'wardName': wardName ?? (wardId != null && wardId!.isNotEmpty ? formatWardDisplayName(wardId!) : null),
       'status': status.displayName,
       'activeAssignmentId': activeAssignmentId,
+      'suspensionReason': suspensionReason,
+      'suspendedUntil': suspendedUntil?.toIso8601String(),
       'createdAt': createdAt.toIso8601String(),
     };
   }
@@ -169,6 +204,8 @@ class UserModel {
       wardName: resolvedWardName,
       status: UserStatus.fromString(map['status']),
       activeAssignmentId: map['activeAssignmentId'],
+      suspensionReason: map['suspensionReason'] as String?,
+      suspendedUntil: map['suspendedUntil'] != null ? _parseDateTime(map['suspendedUntil']) : null,
       createdAt: _parseDateTime(map['createdAt']),
     );
   }
@@ -185,6 +222,10 @@ class UserModel {
     UserStatus? status,
     String? activeAssignmentId,
     bool clearActiveAssignment = false,
+    String? suspensionReason,
+    bool clearSuspensionReason = false,
+    DateTime? suspendedUntil,
+    bool clearSuspendedUntil = false,
     DateTime? createdAt,
   }) {
     return UserModel(
@@ -198,6 +239,8 @@ class UserModel {
       wardName: wardName ?? this.wardName,
       status: status ?? this.status,
       activeAssignmentId: clearActiveAssignment ? null : (activeAssignmentId ?? this.activeAssignmentId),
+      suspensionReason: clearSuspensionReason ? null : (suspensionReason ?? this.suspensionReason),
+      suspendedUntil: clearSuspendedUntil ? null : (suspendedUntil ?? this.suspendedUntil),
       createdAt: createdAt ?? this.createdAt,
     );
   }

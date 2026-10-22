@@ -322,7 +322,7 @@ class _SupervisorWorkerListScreenState extends State<SupervisorWorkerListScreen>
       body: StreamBuilder<List<UserModel>>(
         stream: _firestoreService.streamWorkersByWard(wardId),
         builder: (context, snapshot) {
-          final workers = snapshot.data ?? [];
+          final workers = sortWorkersByStatus(snapshot.data ?? []);
 
           // Trigger task loading for any busy workers
           _loadActiveTasksForWorkers(workers);

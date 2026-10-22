@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../services/firestore_service.dart';
 import '../widgets/app_logo.dart';
 import 'admin_dashboard_screen.dart';
 import 'pending_verification_screen.dart';
@@ -80,7 +81,19 @@ class _LoginScreenState extends State<LoginScreen> {
       } else {
         // Worker Role
         if (user.status == UserStatus.suspended) {
-          destination = SuspensionScreen(user: user);
+          if (user.suspendedUntil != null && DateTime.now().isAfter(user.suspendedUntil!)) {
+            await FirestoreService().reinstateWorker(user.userId);
+            destination = WorkerDashboardScreen(
+              user: user.copyWith(
+                status: UserStatus.available,
+                clearSuspensionReason: true,
+                clearSuspendedUntil: true,
+                clearActiveAssignment: true,
+              ),
+            );
+          } else {
+            destination = SuspensionScreen(user: user);
+          }
         } else if (user.status == UserStatus.pending) {
           destination = const PendingVerificationScreen();
         } else {
@@ -88,6 +101,7 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
 
+      if (!mounted) return;
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => destination),

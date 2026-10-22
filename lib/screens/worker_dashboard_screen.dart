@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/user_model.dart';
+import '../models/task_assignment_model.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import 'login_screen.dart';
+import 'suspension_screen.dart';
 
 class WorkerDashboardScreen extends StatefulWidget {
   final UserModel? user;
@@ -20,6 +23,12 @@ class WorkerDashboardScreen extends StatefulWidget {
 
 class _WorkerDashboardScreenState extends State<WorkerDashboardScreen> {
   late final FirestoreService _firestoreService;
+
+  // Real-time subscriptions for immediate updates without refreshing
+  StreamSubscription<UserModel?>? _userSub;
+  StreamSubscription<TaskAssignmentModel?>? _assignmentSub;
+  Timer? _deadlineTimer;
+  Timer? _suspensionRevokeTimer;
 
   // Local state for current task assignment
   bool _isLoading = false;
@@ -39,7 +48,225 @@ class _WorkerDashboardScreenState extends State<WorkerDashboardScreen> {
   void initState() {
     super.initState();
     _firestoreService = widget.firestoreService ?? FirestoreService();
-    _loadWorkerTaskData();
+    _setupWorkerListeners();
+  }
+
+  @override
+  void dispose() {
+    _deadlineTimer?.cancel();
+    _suspensionRevokeTimer?.cancel();
+    _userSub?.cancel();
+    _assignmentSub?.cancel();
+    super.dispose();
+  }
+
+  void _setupWorkerListeners() {
+    final effectiveUser = _loadedUser ?? widget.user;
+    final workerId = effectiveUser?.userId ??
+        (AuthService().isFirebaseAvailable
+            ? AuthService().auth.currentUser?.uid ?? ''
+            : '');
+
+    if (effectiveUser != null &&
+        effectiveUser.wardId != null &&
+        effectiveUser.wardId!.isNotEmpty) {
+      _loadWardName(effectiveUser.wardId!);
+    }
+
+    if (effectiveUser != null && effectiveUser.status == UserStatus.suspended) {
+      final until = effectiveUser.suspendedUntil;
+      if (until != null) {
+        if (DateTime.now().isAfter(until)) {
+          _revokeSuspension();
+        } else {
+          _scheduleSuspensionRevokeTimer(until);
+        }
+      }
+    }
+
+    if (workerId.isEmpty) {
+      _loadWorkerTaskData();
+      return;
+    }
+
+    // 1. Listen to real-time user profile updates (e.g. instant suspension, ward changes, auto-revocation)
+    _userSub?.cancel();
+    _userSub = _firestoreService.streamUserProfile(workerId).listen((profile) {
+      if (!mounted) return;
+      if (profile != null) {
+        setState(() {
+          _loadedUser = profile;
+        });
+        if (profile.status == UserStatus.suspended) {
+          final until = profile.suspendedUntil;
+          if (until != null) {
+            if (DateTime.now().isAfter(until)) {
+              _revokeSuspension();
+            } else {
+              _scheduleSuspensionRevokeTimer(until);
+            }
+          }
+        }
+        if (profile.wardId != null &&
+            profile.wardId!.isNotEmpty &&
+            _wardName.isEmpty) {
+          _loadWardName(profile.wardId!);
+        }
+      }
+    });
+
+    // 2. Listen to real-time active assignment changes (e.g. verified, auto-verified, rejected)
+    _assignmentSub?.cancel();
+    _assignmentSub = _firestoreService
+        .streamActiveAssignmentForWorker(workerId)
+        .listen((assignment) async {
+      if (!mounted) return;
+      await _applyAssignmentUpdate(assignment);
+    });
+  }
+
+  Future<void> _applyAssignmentUpdate(TaskAssignmentModel? assignment) async {
+    _deadlineTimer?.cancel();
+    if (assignment == null) {
+      if (mounted) {
+        setState(() {
+          _hasActiveTask = false;
+          _currentAssignmentId = null;
+          _taskTitle = '';
+          _taskDescription = '';
+          _taskStatus = '';
+          _failedAttempts = 0;
+          _supervisorFeedback = null;
+          _targetDeadline = '';
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+
+    // Check if task deadline has passed (PRD SU01, AC13)
+    if (assignment.status != AssignmentStatus.verified &&
+        assignment.status != AssignmentStatus.autoVerified &&
+        assignment.status != AssignmentStatus.notCompleted) {
+      final now = DateTime.now();
+      if (now.isAfter(assignment.deadline)) {
+        await _handleDeadlinePassed(assignment);
+        return;
+      } else {
+        final remaining = assignment.deadline.difference(now);
+        _deadlineTimer = Timer(remaining, () {
+          if (mounted) {
+            _handleDeadlinePassed(assignment);
+          }
+        });
+      }
+    }
+
+    String title = 'Cleaning Task';
+    String desc = '';
+    if (assignment.taskId.isNotEmpty) {
+      final task = await _firestoreService.getTask(assignment.taskId);
+      if (task != null) {
+        title = task.title;
+        desc = task.description;
+      }
+    }
+
+    if (assignment.wardId.isNotEmpty && _wardName.isEmpty) {
+      await _loadWardName(assignment.wardId);
+    }
+
+    final hour = assignment.deadline.hour;
+    final minute = assignment.deadline.minute.toString().padLeft(2, '0');
+    final ampm = hour >= 12 ? 'PM' : 'AM';
+    final hour12 = hour % 12 == 0 ? 12 : hour % 12;
+
+    if (mounted) {
+      setState(() {
+        _hasActiveTask = true;
+        _currentAssignmentId = assignment.assignmentId;
+        _taskTitle = title;
+        _taskDescription = desc;
+        _taskStatus = assignment.status.displayName;
+        _failedAttempts = assignment.attempts;
+        _supervisorFeedback = assignment.supervisorFeedback;
+        _targetDeadline = '$hour12:$minute $ampm';
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _handleDeadlinePassed(TaskAssignmentModel assignment) async {
+    _deadlineTimer?.cancel();
+    if (!mounted) return;
+
+    final suspendedUntil = DateTime.now().add(const Duration(days: 1));
+
+    // Immediately transition to SuspensionScreen without needing any manual refresh (PRD SU01, SU04, AC15)
+    setState(() {
+      _hasActiveTask = false;
+      _currentAssignmentId = null;
+      _taskTitle = '';
+      _taskDescription = '';
+      _taskStatus = '';
+      _targetDeadline = '';
+      _loadedUser = _currentUser?.copyWith(
+        status: UserStatus.suspended,
+        suspensionReason: 'Missed Task Deadline (PRD SU01)',
+        suspendedUntil: suspendedUntil,
+        clearActiveAssignment: true,
+      );
+      _isLoading = false;
+    });
+
+    _scheduleSuspensionRevokeTimer(suspendedUntil);
+
+    await _firestoreService.handleMissedDeadline(
+      assignmentId: assignment.assignmentId,
+      workerId: assignment.workerId,
+      taskId: assignment.taskId,
+    );
+  }
+
+  void _scheduleSuspensionRevokeTimer(DateTime suspendedUntil) {
+    _suspensionRevokeTimer?.cancel();
+    final remaining = suspendedUntil.difference(DateTime.now());
+    if (remaining.isNegative || remaining == Duration.zero) {
+      _revokeSuspension();
+    } else {
+      _suspensionRevokeTimer = Timer(remaining, () {
+        if (mounted) {
+          _revokeSuspension();
+        }
+      });
+    }
+  }
+
+  Future<void> _revokeSuspension() async {
+    _suspensionRevokeTimer?.cancel();
+    if (!mounted) return;
+
+    final workerId = _currentUser?.userId ?? '';
+    if (workerId.isNotEmpty) {
+      await _firestoreService.reinstateWorker(workerId);
+    }
+
+    if (mounted) {
+      setState(() {
+        _loadedUser = _currentUser?.copyWith(
+          status: UserStatus.available,
+          clearSuspensionReason: true,
+          clearSuspendedUntil: true,
+          clearActiveAssignment: true,
+        );
+        _hasActiveTask = false;
+        _currentAssignmentId = null;
+        _taskTitle = '';
+        _taskDescription = '';
+        _isLoading = false;
+      });
+      await _loadWorkerTaskData();
+    }
   }
 
   Future<void> _loadWorkerTaskData() async {
@@ -75,46 +302,7 @@ class _WorkerDashboardScreenState extends State<WorkerDashboardScreen> {
       try {
         final assignment = await _firestoreService
             .getActiveAssignmentForWorker(currentUser.userId);
-        if (assignment != null) {
-          String title = 'Cleaning Task';
-          String desc = '';
-          if (assignment.taskId.isNotEmpty) {
-            final task = await _firestoreService.getTask(assignment.taskId);
-            if (task != null) {
-              title = task.title;
-              desc = task.description;
-            }
-          }
-
-          if (assignment.wardId.isNotEmpty && _wardName.isEmpty) {
-            await _loadWardName(assignment.wardId);
-          }
-
-          final hour = assignment.deadline.hour;
-          final minute = assignment.deadline.minute.toString().padLeft(2, '0');
-          final ampm = hour >= 12 ? 'PM' : 'AM';
-          final hour12 = hour % 12 == 0 ? 12 : hour % 12;
-
-          if (mounted) {
-            setState(() {
-              _hasActiveTask = true;
-              _currentAssignmentId = assignment.assignmentId;
-              _taskTitle = title;
-              _taskDescription = desc;
-              _taskStatus = assignment.status.displayName;
-              _failedAttempts = assignment.attempts;
-              _supervisorFeedback = assignment.supervisorFeedback;
-              _targetDeadline = '$hour12:$minute $ampm';
-            });
-          }
-        } else {
-          if (mounted) {
-            setState(() {
-              _hasActiveTask = false;
-              _currentAssignmentId = null;
-            });
-          }
-        }
+        await _applyAssignmentUpdate(assignment);
       } catch (e) {
         debugPrint('Note loading task assignment: $e');
       } finally {
@@ -122,6 +310,8 @@ class _WorkerDashboardScreenState extends State<WorkerDashboardScreen> {
       }
     }
   }
+
+
 
   Future<void> _loadWardName(String wardId) async {
     try {
@@ -380,6 +570,15 @@ class _WorkerDashboardScreenState extends State<WorkerDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // If worker account is suspended (e.g. after 3 failed attempts - PRD SU02, SU04, AC15)
+    // immediately display the SuspensionScreen without needing any refresh.
+    if (_currentUser?.status == UserStatus.suspended) {
+      return SuspensionScreen(
+        user: _currentUser,
+        onSuspensionRevoked: _revokeSuspension,
+      );
+    }
+
     final displayName = _getEffectiveUserName();
     final employeeId = _getEffectiveEmployeeId();
     final ward = _wardName.isNotEmpty

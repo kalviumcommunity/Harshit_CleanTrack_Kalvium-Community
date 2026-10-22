@@ -231,7 +231,7 @@ class _WorkerManagementScreenState extends State<WorkerManagementScreen> {
   }
 
   List<UserModel> get _verifiedWorkers {
-    return _workers.where((w) => w.status != UserStatus.pending).toList();
+    return sortWorkersByStatus(_workers.where((w) => w.status != UserStatus.pending));
   }
 
   List<UserModel> get _filteredWorkers {
@@ -239,7 +239,7 @@ class _WorkerManagementScreenState extends State<WorkerManagementScreen> {
     if (_selectedWardFilter == 'all') {
       return baseWorkers;
     }
-    return baseWorkers.where((w) {
+    return sortWorkersByStatus(baseWorkers.where((w) {
       if (w.wardId != null && w.wardId == _selectedWardFilter) return true;
       if (w.wardName != null && w.wardName!.toLowerCase() == _selectedWardFilter.toLowerCase()) return true;
 
@@ -252,7 +252,7 @@ class _WorkerManagementScreenState extends State<WorkerManagementScreen> {
         if (w.wardId != null && w.wardId!.toLowerCase() == matchedWard.name.toLowerCase()) return true;
       }
       return false;
-    }).toList();
+    }));
   }
 
   int _countWorkersForWard(WardModel ward) {
