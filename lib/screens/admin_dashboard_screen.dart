@@ -499,7 +499,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => const MonthlyReportsScreen(),
+                      builder: (_) => MonthlyReportsScreen(
+                        adminUser: _currentUser,
+                        firestoreService: widget.firestoreService,
+                      ),
                     ),
                   ),
                 ),
