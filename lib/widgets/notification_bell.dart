@@ -5,19 +5,33 @@ import '../services/firestore_service.dart';
 class NotificationBell extends StatelessWidget {
   final String? userId;
   final FirestoreService service;
+  final String fallbackTitle;
+  final String? fallbackMessage;
 
   const NotificationBell({
     super.key,
     required this.userId,
     required this.service,
+    this.fallbackTitle = 'Notifications',
+    this.fallbackMessage,
   });
 
   @override
   Widget build(BuildContext context) {
     if (userId == null || userId!.isEmpty) {
-      return const IconButton(
-        onPressed: null,
-        icon: Icon(Icons.notifications_none_rounded),
+      return IconButton(
+        icon: const Icon(Icons.notifications_none_rounded),
+        tooltip: 'Notifications',
+        onPressed: () => showModalBottomSheet<void>(
+          context: context,
+          builder: (_) => NotificationListSheet(
+            userId: '',
+            service: service,
+            notifications: const [],
+            title: fallbackTitle,
+            fallbackMessage: fallbackMessage,
+          ),
+        ),
       );
     }
 
@@ -48,6 +62,8 @@ class NotificationBell extends StatelessWidget {
                   userId: userId!,
                   service: service,
                   notifications: notifications,
+                  title: fallbackTitle,
+                  fallbackMessage: fallbackMessage,
                 ),
               ),
             ),
@@ -84,12 +100,16 @@ class NotificationListSheet extends StatelessWidget {
   final String userId;
   final FirestoreService service;
   final List<NotificationModel> notifications;
+  final String title;
+  final String? fallbackMessage;
 
   const NotificationListSheet({
     super.key,
     required this.userId,
     required this.service,
     required this.notifications,
+    this.title = 'Notifications',
+    this.fallbackMessage,
   });
 
   @override
@@ -103,10 +123,10 @@ class NotificationListSheet extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Notifications',
-                      style: TextStyle(
+                      title,
+                      style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                         color: Color(0xFF0F172A),
@@ -124,15 +144,15 @@ class NotificationListSheet extends StatelessWidget {
               const SizedBox(height: 8),
               Expanded(
                 child: notifications.isEmpty
-                    ? const Center(
+                    ? Center(
                         child: Text(
-                          'No notifications',
-                          style: TextStyle(color: Color(0xFF64748B)),
+                          fallbackMessage ?? 'No notifications',
+                          style: const TextStyle(color: Color(0xFF64748B)),
                         ),
                       )
                     : ListView.separated(
                         itemCount: notifications.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        separatorBuilder: (_, _) => const Divider(height: 1),
                         itemBuilder: (context, index) {
                           final notification = notifications[index];
                           return ListTile(

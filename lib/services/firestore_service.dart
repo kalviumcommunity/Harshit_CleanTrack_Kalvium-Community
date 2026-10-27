@@ -185,7 +185,7 @@ class FirestoreService {
     final supervisorId = await _supervisorIdForWard(wardId);
     final admins = await _userIdsForRole(UserRole.admin);
     await _notifyUsers(
-      recipientIds: [...admins, if (supervisorId != null) supervisorId, workerId],
+      recipientIds: [...admins, ?supervisorId, workerId],
       title: 'Worker suspended',
       message: 'A worker was suspended. Reason: $reason.',
       type: 'worker_suspended',
