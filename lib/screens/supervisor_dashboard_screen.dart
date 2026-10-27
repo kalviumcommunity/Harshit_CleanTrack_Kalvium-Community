@@ -10,6 +10,7 @@ import 'login_screen.dart';
 import 'supervisor_worker_list_screen.dart';
 import 'supervisor_assign_task_screen.dart';
 import 'supervisor_pending_verification_screen.dart';
+import '../widgets/notification_bell.dart';
 
 class SupervisorDashboardScreen extends StatefulWidget {
   final UserModel? user;
@@ -328,22 +329,9 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
                     ],
                   ),
                   const Spacer(),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.notifications_none_rounded,
-                      color: Color(0xFF0F172A),
-                      size: 24,
-                    ),
-                    tooltip: 'Notifications',
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Notifications module is coming up next.'),
-                          duration: Duration(seconds: 2),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    },
+                  NotificationBell(
+                    userId: _currentUser?.userId,
+                    service: _firestoreService,
                   ),
                   const SizedBox(width: 4),
                   // User Profile Avatar - Popup menu showing supervisor name, email, and LOG OUT

@@ -6,6 +6,7 @@ import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import 'login_screen.dart';
 import 'suspension_screen.dart';
+import '../widgets/notification_bell.dart';
 
 class WorkerDashboardScreen extends StatefulWidget {
   final UserModel? user;
@@ -636,15 +637,9 @@ class _WorkerDashboardScreenState extends State<WorkerDashboardScreen> {
                   ),
                   const Spacer(),
 
-                  // Notifications Bell
-                  IconButton(
-                    icon: const Icon(
-                      Icons.notifications_none_rounded,
-                      color: Color(0xFF0F172A),
-                      size: 24,
-                    ),
-                    tooltip: 'Notifications',
-                    onPressed: _showNotificationsSheet,
+                  NotificationBell(
+                    userId: _currentUser?.userId,
+                    service: _firestoreService,
                   ),
                   const SizedBox(width: 4),
 

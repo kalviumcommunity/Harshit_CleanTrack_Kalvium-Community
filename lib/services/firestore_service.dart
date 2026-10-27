@@ -6,6 +6,7 @@ import '../models/user_model.dart';
 import '../models/ward_model.dart';
 import '../models/task_model.dart';
 import '../models/task_assignment_model.dart';
+import '../models/notification_model.dart';
 import 'auth_service.dart';
 
 class SupervisorDashboardStats {
@@ -57,11 +58,15 @@ class FirestoreService {
   CollectionReference<Map<String, dynamic>> get _taskAssignmentsCollection =>
       firestore.collection('taskAssignments');
 
+  CollectionReference<Map<String, dynamic>> get _notificationsCollection =>
+      firestore.collection('notifications');
+
   // In-memory data structures for testing & offline mode
   final List<UserModel> _inMemoryUsers = [];
   final List<WardModel> _inMemoryWards = [];
   final List<TaskModel> _inMemoryTasks = [];
   final List<TaskAssignmentModel> _inMemoryAssignments = [];
+  final List<NotificationModel> _inMemoryNotifications = [];
 
   final StreamController<void> _inMemoryChangeNotifier = StreamController<void>.broadcast();
 
@@ -76,7 +81,213 @@ class FirestoreService {
     _inMemoryWards.clear();
     _inMemoryTasks.clear();
     _inMemoryAssignments.clear();
+    _inMemoryNotifications.clear();
     _notifyInMemoryChange();
+  }
+
+  // ==================== NOTIFICATIONS ====================
+
+  /// Creates a per-user notification. Expired notifications are eligible for
+  /// Firestore TTL deletion through the expiresAt field.
+  Future<void> createNotification({
+    required String recipientId,
+    required String title,
+    required String message,
+    required String type,
+    String? relatedId,
+  }) async {
+    if (recipientId.trim().isEmpty) return;
+    final now = DateTime.now();
+    final notificationId =
+        'notification_${now.microsecondsSinceEpoch}_$recipientId';
+    final notification = NotificationModel(
+      notificationId: notificationId,
+      recipientId: recipientId,
+      title: title,
+      message: message,
+      type: type,
+      relatedId: relatedId,
+      createdAt: now,
+      expiresAt: now.add(const Duration(days: 45)),
+    );
+    _inMemoryNotifications.add(notification);
+    _notifyInMemoryChange();
+
+    if (isFirebaseAvailable) {
+      try {
+        await _notificationsCollection
+            .doc(notificationId)
+            .set(notification.toJson());
+      } catch (e) {
+        debugPrint('Error creating notification: $e');
+      }
+    }
+  }
+
+  Future<void> _notifyUsers({
+    required Iterable<String> recipientIds,
+    required String title,
+    required String message,
+    required String type,
+    String? relatedId,
+  }) async {
+    for (final recipientId in recipientIds.toSet()) {
+      await createNotification(
+        recipientId: recipientId,
+        title: title,
+        message: message,
+        type: type,
+        relatedId: relatedId,
+      );
+    }
+  }
+
+  Future<List<String>> _userIdsForRole(UserRole role) async {
+    if (isFirebaseAvailable) {
+      try {
+        final snapshot = await _usersCollection
+            .where('role', isEqualTo: role.displayName)
+            .get();
+        return snapshot.docs.map((doc) => doc.id).toList();
+      } catch (e) {
+        debugPrint('Error finding notification recipients: $e');
+      }
+    }
+    return [..._inMemoryUsers, ...AuthService().registeredUsers]
+        .where((user) => user.role == role)
+        .map((user) => user.userId)
+        .toSet()
+        .toList();
+  }
+
+  Future<String?> _supervisorIdForWard(String wardId) async {
+    if (wardId.isEmpty) return null;
+    if (isFirebaseAvailable) {
+      try {
+        final ward = await _wardsCollection.doc(wardId).get();
+        return ward.data()?['supervisorId'] as String?;
+      } catch (e) {
+        debugPrint('Error finding ward supervisor for notification: $e');
+      }
+    }
+    for (final ward in _inMemoryWards) {
+      if (ward.wardId == wardId) return ward.supervisorId;
+    }
+    return null;
+  }
+
+  Future<void> _notifySuspension({
+    required String workerId,
+    required String wardId,
+    required String reason,
+    String? relatedId,
+  }) async {
+    final supervisorId = await _supervisorIdForWard(wardId);
+    final admins = await _userIdsForRole(UserRole.admin);
+    await _notifyUsers(
+      recipientIds: [...admins, if (supervisorId != null) supervisorId, workerId],
+      title: 'Worker suspended',
+      message: 'A worker was suspended. Reason: $reason.',
+      type: 'worker_suspended',
+      relatedId: relatedId,
+    );
+  }
+
+  Stream<List<NotificationModel>> streamNotifications(String recipientId) {
+    if (isFirebaseAvailable) {
+      return _notificationsCollection
+          .where('recipientId', isEqualTo: recipientId)
+          .snapshots()
+          .map((snapshot) {
+        final now = DateTime.now();
+        final expired = <DocumentSnapshot<Map<String, dynamic>>>[];
+        final notifications = <NotificationModel>[];
+        for (final doc in snapshot.docs) {
+          final notification = NotificationModel.fromMap(doc.data(), doc.id);
+          if (notification.expiresAt.isAfter(now)) {
+            notifications.add(notification);
+          } else {
+            expired.add(doc);
+          }
+        }
+        if (expired.isNotEmpty) {
+          Future.wait(expired.map((doc) => doc.reference.delete()));
+        }
+        notifications.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        return notifications;
+      });
+    }
+
+    List<NotificationModel> currentNotifications() {
+      final notifications = _inMemoryNotifications
+          .where((notification) =>
+              notification.recipientId == recipientId &&
+              notification.expiresAt.isAfter(DateTime.now()))
+          .toList();
+      notifications.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return notifications;
+    }
+
+    late StreamController<List<NotificationModel>> controller;
+    StreamSubscription<void>? subscription;
+    controller = StreamController<List<NotificationModel>>(
+      onListen: () {
+        controller.add(currentNotifications());
+        subscription = _inMemoryChangeNotifier.stream.listen((_) {
+          if (!controller.isClosed) controller.add(currentNotifications());
+        });
+      },
+      onCancel: () => subscription?.cancel(),
+    );
+    return controller.stream;
+  }
+
+  Future<void> markNotificationRead(String notificationId) async {
+    final index = _inMemoryNotifications
+        .indexWhere((notification) => notification.notificationId == notificationId);
+    if (index != -1) {
+      _inMemoryNotifications[index] =
+          _inMemoryNotifications[index].copyWith(isRead: true);
+      _notifyInMemoryChange();
+    }
+    if (isFirebaseAvailable) {
+      try {
+        await _notificationsCollection.doc(notificationId).update({'isRead': true});
+      } catch (e) {
+        debugPrint('Error marking notification as read: $e');
+      }
+    }
+  }
+
+  Future<void> markAllNotificationsRead(String recipientId) async {
+    final unread = _inMemoryNotifications
+        .where((notification) =>
+            notification.recipientId == recipientId && !notification.isRead)
+        .toList();
+    for (final notification in unread) {
+      final index = _inMemoryNotifications
+          .indexWhere((item) => item.notificationId == notification.notificationId);
+      if (index != -1) {
+        _inMemoryNotifications[index] =
+            _inMemoryNotifications[index].copyWith(isRead: true);
+      }
+    }
+    if (unread.isNotEmpty) _notifyInMemoryChange();
+    if (isFirebaseAvailable) {
+      try {
+        final snapshot = await _notificationsCollection
+            .where('recipientId', isEqualTo: recipientId)
+            .where('isRead', isEqualTo: false)
+            .get();
+        final batch = firestore.batch();
+        for (final doc in snapshot.docs) {
+          batch.update(doc.reference, {'isRead': true});
+        }
+        await batch.commit();
+      } catch (e) {
+        debugPrint('Error marking all notifications as read: $e');
+      }
+    }
   }
 
   void seedWard(WardModel ward) {
@@ -120,11 +331,29 @@ class FirestoreService {
               user.toJson(),
               SetOptions(merge: true),
             );
+        if (user.status == UserStatus.pending) {
+          await _notifyUsers(
+            recipientIds: await _userIdsForRole(UserRole.admin),
+            title: 'New registration',
+            message: '${user.name} submitted a registration for review.',
+            type: 'registration_submitted',
+            relatedId: user.userId,
+          );
+        }
         return true;
       } catch (e) {
         debugPrint('Error saving user profile to Firestore: $e');
         return false;
       }
+    }
+    if (user.status == UserStatus.pending) {
+      await _notifyUsers(
+        recipientIds: await _userIdsForRole(UserRole.admin),
+        title: 'New registration',
+        message: '${user.name} submitted a registration for review.',
+        type: 'registration_submitted',
+        relatedId: user.userId,
+      );
     }
     return true;
   }
@@ -353,6 +582,13 @@ class FirestoreService {
             _inMemoryWards.add(WardModel(wardId: wardId, name: cleanWardName, supervisorId: userId));
           }
           _notifyInMemoryChange();
+          await createNotification(
+            recipientId: userId,
+            title: 'Registration approved',
+            message: 'Your CleanTrack registration has been approved.',
+            type: 'registration_approved',
+            relatedId: userId,
+          );
           return true;
         } else if (role == UserRole.worker) {
           final wardSnapshot = await wardDocRef.get();
@@ -434,6 +670,13 @@ class FirestoreService {
             ));
           }
           _notifyInMemoryChange();
+          await createNotification(
+            recipientId: userId,
+            title: 'Registration approved',
+            message: 'Your CleanTrack registration has been approved.',
+            type: 'registration_approved',
+            relatedId: userId,
+          );
           return true;
         }
       } catch (e) {
@@ -538,6 +781,13 @@ class FirestoreService {
     }
 
     _notifyInMemoryChange();
+    await createNotification(
+      recipientId: userId,
+      title: 'Registration approved',
+      message: 'Your CleanTrack registration has been approved.',
+      type: 'registration_approved',
+      relatedId: userId,
+    );
     return true;
   }
 
@@ -1531,6 +1781,13 @@ class FirestoreService {
       }
     }
 
+    await createNotification(
+      recipientId: workerId,
+      title: 'New task assigned',
+      message: 'You have been assigned "${task.title}".',
+      type: 'task_assigned',
+      relatedId: assignmentId,
+    );
     return assignment;
   }
 
@@ -1542,7 +1799,6 @@ class FirestoreService {
     required String workerId,
   }) async {
     final now = DateTime.now();
-
     final aIdx = _inMemoryAssignments.indexWhere((a) => a.assignmentId == assignmentId);
     final effectiveTaskId = taskId.isNotEmpty
         ? taskId
@@ -1599,6 +1855,15 @@ class FirestoreService {
             'status': UserStatus.available.displayName,
             'activeAssignmentId': null,
           });
+        }
+        if (effectiveWorkerId.isNotEmpty) {
+          await createNotification(
+            recipientId: effectiveWorkerId,
+            title: 'Task verified',
+            message: 'Your completed task has been verified successfully.',
+            type: 'task_verified',
+            relatedId: effectiveTaskId,
+          );
         }
         return true;
       } catch (e) {
@@ -1789,6 +2054,7 @@ class FirestoreService {
     required int currentAttempts,
   }) async {
     final newAttempts = currentAttempts + 1;
+    final existingAssignment = await getAssignment(assignmentId);
 
     if (newAttempts >= 3) {
       // 3rd rejection: 3 failed attempts reached -> Suspend worker for 1 day & mark assignment Not Completed
@@ -1834,6 +2100,12 @@ class FirestoreService {
             'suspendedUntil': suspendedUntil.toIso8601String(),
             'activeAssignmentId': null,
           });
+          await _notifySuspension(
+            workerId: workerId,
+            wardId: existingAssignment?.wardId ?? '',
+            reason: '3 Failed Verification Attempts (PRD SU02)',
+            relatedId: assignmentId,
+          );
           return true;
         } catch (e) {
           debugPrint('Error suspending worker on 3rd rejection: $e');
@@ -1860,6 +2132,13 @@ class FirestoreService {
             'attempts': newAttempts,
             'completedAt': null,
           });
+          await createNotification(
+            recipientId: workerId,
+            title: 'Task needs correction',
+            message: 'Your completed task was sent back for correction.',
+            type: 'task_rejected',
+            relatedId: assignmentId,
+          );
           return true;
         } catch (e) {
           debugPrint('Error rejecting task assignment: $e');
@@ -1878,6 +2157,7 @@ class FirestoreService {
     String? taskId,
   }) async {
     final suspendedUntil = DateTime.now().add(const Duration(days: 1));
+    final existingAssignment = await getAssignment(assignmentId);
     final aIdx = _inMemoryAssignments.indexWhere((a) => a.assignmentId == assignmentId);
     if (aIdx != -1) {
       _inMemoryAssignments[aIdx] = _inMemoryAssignments[aIdx].copyWith(
@@ -1917,6 +2197,12 @@ class FirestoreService {
           'suspendedUntil': suspendedUntil.toIso8601String(),
           'activeAssignmentId': null,
         });
+        await _notifySuspension(
+          workerId: workerId,
+          wardId: existingAssignment?.wardId ?? '',
+          reason: 'Missed Task Deadline (PRD SU01)',
+          relatedId: assignmentId,
+        );
         return true;
       } catch (e) {
         debugPrint('Error suspending worker on missed deadline in Firestore: $e');
@@ -2072,6 +2358,12 @@ class FirestoreService {
           });
         } catch (_) {}
       }
+      await _notifySuspension(
+        workerId: workerId,
+        wardId: wardId,
+        reason: '3 Failed Verification Attempts (PRD SU02)',
+        relatedId: assignmentId,
+      );
       return null;
     }
 
@@ -2123,6 +2415,13 @@ class FirestoreService {
       }
     }
 
+    await createNotification(
+      recipientId: workerId,
+      title: 'Task reassigned',
+      message: 'Your task was reassigned with feedback from your supervisor.',
+      type: 'task_reassigned',
+      relatedId: newAssignmentId,
+    );
     return newAssignment;
   }
 
@@ -2213,6 +2512,19 @@ class FirestoreService {
       }
     }
 
+    await _notifySuspension(
+      workerId: failedWorkerId,
+      wardId: wardId,
+      reason: '3 Failed Verification Attempts (PRD SU02)',
+      relatedId: oldAssignmentId,
+    );
+    await createNotification(
+      recipientId: newWorkerId,
+      title: 'Task reassigned',
+      message: 'A new task has been assigned to you.',
+      type: 'task_reassigned',
+      relatedId: newAssignmentId,
+    );
     return newAssignment;
   }
 
@@ -2475,6 +2787,7 @@ class FirestoreService {
   /// Marks an assignment as completed / pending verification by the worker (PRD 6.4 & C01)
   Future<bool> markAssignmentCompleted(String assignmentId) async {
     final now = DateTime.now();
+    final assignment = await getAssignment(assignmentId);
     final aIdx = _inMemoryAssignments.indexWhere((a) => a.assignmentId == assignmentId);
     if (aIdx != -1) {
       _inMemoryAssignments[aIdx] = _inMemoryAssignments[aIdx].copyWith(
@@ -2490,6 +2803,17 @@ class FirestoreService {
           'status': AssignmentStatus.pendingVerification.displayName,
           'completedAt': now.toIso8601String(),
         });
+        final supervisorId =
+            await _supervisorIdForWard(assignment?.wardId ?? '');
+        if (supervisorId != null) {
+          await createNotification(
+            recipientId: supervisorId,
+            title: 'Task awaiting verification',
+            message: 'A worker completed a task that needs verification.',
+            type: 'task_completed',
+            relatedId: assignment?.taskId ?? assignmentId,
+          );
+        }
         return true;
       } catch (e) {
         debugPrint('Error marking assignment completed in Firestore: $e');

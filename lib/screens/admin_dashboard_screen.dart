@@ -9,6 +9,7 @@ import 'supervisor_management_screen.dart';
 import 'ward_management_screen.dart';
 import 'worker_management_screen.dart';
 import 'monthly_reports_screen.dart';
+import '../widgets/notification_bell.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   final UserModel? user;
@@ -192,16 +193,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ],
                   ),
                   const Spacer(),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.notifications_none_rounded,
-                      color: Color(0xFF0F172A),
-                      size: 24,
-                    ),
-                    tooltip: 'Notifications',
-                    onPressed: () {
-                      _showComingSoonSnackBar('Notifications');
-                    },
+                  NotificationBell(
+                    userId: _currentUser?.userId,
+                    service: widget.firestoreService ?? FirestoreService(),
                   ),
                   const SizedBox(width: 4),
                   PopupMenuButton<String>(
