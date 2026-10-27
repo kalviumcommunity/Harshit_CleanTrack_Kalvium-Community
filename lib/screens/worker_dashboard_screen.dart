@@ -6,6 +6,7 @@ import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import 'login_screen.dart';
 import 'suspension_screen.dart';
+import '../widgets/notification_bell.dart';
 
 class WorkerDashboardScreen extends StatefulWidget {
   final UserModel? user;
@@ -376,128 +377,6 @@ class _WorkerDashboardScreenState extends State<WorkerDashboardScreen> {
     );
   }
 
-  void _showNotificationsSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Worker Notifications',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF0F172A),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 20),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                if (_hasActiveTask && _taskTitle.isNotEmpty) ...[
-                  _notificationTile(
-                    icon: Icons.assignment_turned_in,
-                    iconColor: const Color(0xFF1E3A8A),
-                    title: 'Task Assigned',
-                    subtitle:
-                        'Supervisor assigned you "$_taskTitle"${_targetDeadline.isNotEmpty ? ' with deadline $_targetDeadline' : ''}.',
-                    timeAgo: 'Active',
-                  ),
-                  const Divider(height: 24),
-                ] else ...[
-                  _notificationTile(
-                    icon: Icons.notifications_none_rounded,
-                    iconColor: const Color(0xFF64748B),
-                    title: 'No New Tasks',
-                    subtitle: 'You have no active task assignments at this moment.',
-                    timeAgo: 'Up to date',
-                  ),
-                  const Divider(height: 24),
-                ],
-                _notificationTile(
-                  icon: Icons.access_time_rounded,
-                  iconColor: const Color(0xFFD97706),
-                  title: 'Verification Window',
-                  subtitle:
-                      'Supervisor has 1 hour to review your completed task.',
-                  timeAgo: 'Information',
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _notificationTile({
-    required IconData icon,
-    required Color iconColor,
-    required String title,
-    required String subtitle,
-    required String timeAgo,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 38,
-          height: 38,
-          decoration: BoxDecoration(
-            color: iconColor.withValues(alpha: 0.1),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, color: iconColor, size: 20),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: Color(0xFF0F172A),
-                    ),
-                  ),
-                  Text(
-                    timeAgo,
-                    style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 3),
-              Text(
-                subtitle,
-                style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   UserModel? get _currentUser => _loadedUser ?? widget.user;
 
   String _getEffectiveUserName() {
@@ -636,15 +515,11 @@ class _WorkerDashboardScreenState extends State<WorkerDashboardScreen> {
                   ),
                   const Spacer(),
 
-                  // Notifications Bell
-                  IconButton(
-                    icon: const Icon(
-                      Icons.notifications_none_rounded,
-                      color: Color(0xFF0F172A),
-                      size: 24,
-                    ),
-                    tooltip: 'Notifications',
-                    onPressed: _showNotificationsSheet,
+                  NotificationBell(
+                    userId: _currentUser?.userId,
+                    service: _firestoreService,
+                    fallbackTitle: 'Worker Notifications',
+                    fallbackMessage: 'Verification Window',
                   ),
                   const SizedBox(width: 4),
 
